@@ -1,48 +1,41 @@
-# Catálogo de perfumes com atualização automática
+# Catálogo de perfumes
 
-Site estático hospedado no GitHub Pages. A cada 6 horas o GitHub roda o coletor
-(`scraper/scrape.mjs`), lê os preços do ComprasParaguai, grava `site/data.json` e republica o site.
-O cliente monta o orçamento e envia pelo WhatsApp, com a loja mais barata e o código do produto na mensagem.
+Site estático (GitHub Pages) onde o cliente monta um orçamento e envia pelo WhatsApp.
+Os preços vêm de uma fonte de preços pública, coletados por um servidor próprio (VPS), e são publicados
+aqui já convertidos para o preço final em reais.
 
-## Colocar no ar (uma vez só, ~10 minutos)
+## Como funciona
 
-1. Crie uma conta em https://github.com (grátis) e um repositório **público** novo, ex.: `catalogo-perfumes`.
-2. Envie todos os arquivos desta pasta para o repositório (botão **Add file > Upload files**,
-   incluindo as pastas `.github`, `scraper` e `site`, o `package.json` e o `package-lock.json`).
-3. No repositório: **Settings > Pages > Build and deployment > Source: GitHub Actions**.
-4. Aba **Actions > Atualizar catálogo > Run workflow**. Em alguns minutos o endereço do site aparece
-   em Settings > Pages (algo como `https://SEU-USUARIO.github.io/catalogo-perfumes/`).
-5. Edite `site/config.json` direto no GitHub (ícone de lápis) e coloque o seu WhatsApp (DDI+DDD, só números),
-   a margem e, se quiser, uma cotação fixa. Ao salvar, o site é republicado sozinho.
+- **Coleta diária (VPS):** `scraper/scrape.mjs` atualiza os preços das ofertas já conhecidas pelas buscas da
+  fonte de preços, uma loja por vez, conforme a agenda de cada loja; 1x por semana procura perfumes novos.
+  Um pedido por vez, com pausa de 10 s (+ sorteio de até 50%). Se a fonte responder 403/429, a coleta para
+  na hora e os dados anteriores são mantidos.
+- **Busca sob demanda (VPS):** `server/api.mjs` atende a busca do site. O que não estiver no catálogo é
+  procurado na hora (com cache, fila e limites por cliente) e passa a fazer parte do catálogo.
+- **Publicação:** `scraper/publicar.mjs` gera `site/data.json` só com nome, foto, preço final (`p`),
+  referência (`r`) e data do preço (`a`). O GitHub republica o site a cada mudança em `site/`.
+- **Dados brutos:** ficam só cifrados no repositório (`scraper/*.enc`, AES-256-GCM). Os arquivos em texto puro
+  (`bruto.json`, `estado.json`, `lojas.json`) estão no `.gitignore`.
 
-## Ajustes comuns
+## Configuração
 
 | O que | Onde |
 |---|---|
-| WhatsApp, acréscimo na cotação, margem, cotação fixa, fotos, título | `site/config.json`. Preço de venda = US$ × (cotação × (1 + `acrescimoCotacao`)) × (1 + `margem`); hoje 5% e 35% |
-| Adicionar/remover lojas e **ordem de prioridade** | `scraper/lojas.json` (o `nome` deve ser igual ao nome da loja no ComprasParaguai). O preço mostrado é o da primeira loja da lista que tiver o perfume (hoje: Mega, Macedonia, Nissei, Cellshop, Madrid Center), mesmo que outra seja mais barata |
-| Quantos perfumes entram | `scraper/modo.json`: `{"modo":"top","quantidade":200}` (os 200 mais procurados) ou `{"modo":"todos"}` (todos os perfumes das lojas; leva bem mais tempo, veja abaixo) |
-| Frequência | linha `cron` em `.github/workflows/atualizar.yml` |
+| WhatsApp, validade do preço (`diasPrecoValido`), fotos, título, endereço da busca (`api`) | `site/config.json` |
+| Margem, acréscimo na cotação, cotação fixa, chave dos dados, endereço da fonte | arquivo `.env` na VPS (`MARGEM`, `ACRESCIMO_COTACAO`, `COTACAO_FIXA`, `DADOS_CHAVE`, `FONTE_URL`) |
+| Lojas, ordem de prioridade e frequência de cada loja | `scraper/lojas.json` (cifrado no repositório) |
+| Termos de busca usados na coleta | `scraper/termos.json` (opcional) |
 
-## Se a atualização parar
+Se o preço de referência tiver mais de `diasPrecoValido` dias, o site mostra "Consultar preço" e o item
+não entra no total.
 
-- Veja a aba **Actions**: o passo "Coletar preços" mostra o erro. Se o ComprasParaguai estiver bloqueando
-  os servidores do GitHub (erro 403/429), o site continua no ar com o último preço bom.
-- Rode `npm run testar` para conferir que o coletor ainda entende o formato do site (usa um servidor falso).
-- O coletor lê só informações públicas, com pausa entre as páginas. Veja os termos de uso do ComprasParaguai
-  antes de divulgar o site em larga escala.
+## Comandos
 
-## Passar para "todos os perfumes das 5 lojas"
+- `npm test` / `npm run testar`: testes com um servidor falso (não acessa a internet).
+- `npm run decifrar` / `npm run cifrar`: abre e fecha os dados (precisa de `DADOS_CHAVE`).
+- `npm run atualizar`: coleta. `npm run publicar`: gera `site/data.json`.
 
-1. Em `scraper/modo.json` troque o conteúdo por `{ "modo": "todos" }` e salve.
-2. Em `.github/workflows/atualizar.yml` troque a frequência `"17 */6 * * *"` por `"17 5 * * *"` (uma vez por dia):
-   a coleta completa lê milhares de páginas e leva de 30 min a poucas horas.
-3. Rode **Actions > Atualizar catálogo > Run workflow**. O site mostra 60 perfumes por vez, com o botão "Mostrar mais".
+## Na VPS
 
-## Onde a coleta roda (desde 16/11/2026)
-
-O ComprasParaguai bloqueia os servidores do GitHub e da AWS (erro 403). Por isso a coleta roda na VPS,
-em `~/catalogo-perfumes`, pelo Cloudflare WARP (container `catalogo-warp`, proxy só para o coletor).
-O cron do usuário `ubuntu` roda `~/catalogo-perfumes/coletar.sh` a cada 6 horas; se os preços mudarem, ele envia
-`site/data.json` para este repositório (chave de deploy só deste repositório) e o GitHub republica o site.
-Log: `~/catalogo-perfumes/coleta.log`.
+Pasta `~/catalogo-perfumes`: `repo/` (este repositório), `compose.yaml`, `coletar.sh`, `.env`, `dados/` e
+`coleta.log`. O cron roda `coletar.sh` uma vez por dia; o serviço de busca roda no container `catalogo-api`.

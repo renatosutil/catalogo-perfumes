@@ -75,6 +75,7 @@ a.btn{display:block;text-align:center;text-decoration:none}
   <h2>Seu orçamento</h2>
   <div id="lines"></div>
   <div class="total"><span>Total estimado</span><span id="dtotal"></span></div>
+  <p class="note" style="margin:0">Valores estimados, sujeitos a confirmação.</p>
   <input id="cname" placeholder="Seu nome">
   <textarea id="cnote" rows="2" placeholder="Observações (cidade de entrega, prazo, perfume que não achou, etc.)"></textarea>
   <div class="row">
@@ -89,10 +90,15 @@ const brl=v=>v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const hue=s=>{let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))%360;return h};
-let LIMIT=60,CFG={whatsapp:"",acrescimoCotacao:0,margem:0.15,cotacao:null,mostrarFotos:true},DB={},P=[],COT=5.65;
-const cart={};
+const HOJE=new Date().toLocaleDateString("en-CA");
+const idade=a=>a?Math.max(0,Math.round((Date.parse(HOJE)-Date.parse(a))/864e5)):999;
+const lido=d=>d===0?"preço lido hoje":"preço lido há "+d+(d===1?" dia":" dias");
+const AVISO="Valores estimados, sujeitos a confirmação.";
+let LIMIT=60,CFG={whatsapp:"",diasPrecoValido:7,mostrarFotos:true,api:""},DB={produtos:[]},P=[];
+const cart={},EXTRA={};
 try{Object.assign(cart,JSON.parse(localStorage.getItem("cartN")||"{}"))}catch(e){}
-const save=()=>{try{localStorage.setItem("cartN",JSON.stringify(cart))}catch(e){}};
+try{Object.assign(EXTRA,JSON.parse(localStorage.getItem("extraN")||"{}"))}catch(e){}
+const save=()=>{try{localStorage.setItem("cartN",JSON.stringify(cart));localStorage.setItem("extraN",JSON.stringify(EXTRA))}catch(e){}};
 
 function bottle(b){const h=hue(b);return `<svg width="40" height="62" viewBox="0 0 40 62"><rect x="15" y="2" width="10" height="9" rx="2" fill="hsl(${h} 35% 35%)"/><rect x="12" y="11" width="16" height="5" fill="hsl(${h} 30% 55%)"/><rect x="4" y="16" width="32" height="44" rx="8" fill="hsl(${h} 55% 62%)"/><rect x="9" y="26" width="22" height="18" rx="3" fill="#fff" opacity=".55"/></svg>`}
 function pic(p){
@@ -101,48 +107,73 @@ function pic(p){
   return `<div class="pic"><img loading="lazy" referrerpolicy="no-referrer" src="${esc(p.img)}" alt="${esc(p.full)}" onerror="this.parentNode.outerHTML=this.dataset.fb" data-fb="${esc(fb)}"></div>`;
 }
 function build(){
-  // preço = US$ × (cotação × (1 + acrescimoCotacao)) × (1 + margem)
-  COT=(CFG.cotacao||DB.cotacao||5.65)*(1+(Number(CFG.acrescimoCotacao)||0));
+  const validade=Number(CFG.diasPrecoValido)||7;
   P=DB.produtos.map((d,i)=>{
     const brand=BRANDS.find(b=>d.n.startsWith(b))||d.n.split(" ")[0];
-    const gender=/Masculino/.test(d.n)?"Masculino":/Feminino/.test(d.n)?"Feminino":"Unissex";
-    const name=d.n.slice(brand.length).trim().replace(/\s*(Eau de Parfum|Eau de Toilette|Extrait de Parfum|Parfum)\s*/i," ").replace(/\s+(Masculino|Feminino|Unissex)\b/,"").replace(/\s*\d+\s*ML\b/i,"").trim();
-    const conc=(d.n.match(/Eau de Parfum|Eau de Toilette|Extrait de Parfum/)||[""])[0];
-    const ml=(d.n.match(/(\d+)ML/)||[,""])[1];
-    const offers=d.o.slice().sort((x,y)=>x[0]-y[0]); // prioridade = ordem das lojas (a primeira que tiver o perfume)
-    return {id:i,brand,gender,name,conc,ml,full:d.n,img:d.i,offers,price:Math.ceil(offers[0][1]*COT*(1+CFG.margem))};
+    const gender=/Masculino/i.test(d.n)?"Masculino":/Feminino/i.test(d.n)?"Feminino":"Unissex";
+    const name=d.n.slice(brand.length).trim().replace(/\s*(Eau de Parfum|Eau de Toilette|Extrait de Parfum|Parfum)\s*/i," ").replace(/\s+(Masculino|Feminino|Unissex)\b/i,"").replace(/\s*\d+\s*ML\b/i,"").trim();
+    const conc=(d.n.match(/Eau de Parfum|Eau de Toilette|Extrait de Parfum/i)||[""])[0];
+    const ml=(d.n.match(/(\d+)\s*ML/i)||[,""])[1];
+    const dias=idade(d.a);
+    return {id:i,brand,gender,name,conc,ml,full:d.n,img:d.i,price:d.p,ref:d.r,dias,stale:dias>validade};
   });
-  const sel=$("brand");sel.length=1;
+  const sel=$("brand"),atual=sel.value;sel.length=1;
   [...new Set(P.map(p=>p.brand))].sort().forEach(b=>{const o=document.createElement("option");o.textContent=b;sel.appendChild(o)});
+  sel.value=atual;
   Object.keys(cart).forEach(k=>{if(!P.find(p=>p.full===k))delete cart[k]});
 }
 const byName=n=>P.find(p=>p.full===n);
+const precoCard=p=>p.stale?'<div class="price" style="font-size:16px">Consultar preço</div>':`<div class="price">${brl(p.price)}</div>`;
 function setQty(n,q){if(q<=0)delete cart[n];else cart[n]=q;save();render();updateBar();if($("dlg").open)renderLines()}
+
+// busca ampliada: o que não está no catálogo é procurado pelo serviço de busca
+const BUSCADOS={};let buscaT=null,buscando=0,indisponivel=false;
+function buscarMais(){
+  clearTimeout(buscaT);
+  const q=$("q").value.trim(),k=q.toLowerCase();
+  if(!CFG.api||k.replace(/\s/g,"").length<3||BUSCADOS[k])return;
+  buscaT=setTimeout(async()=>{
+    BUSCADOS[k]=1;buscando++;indisponivel=false;render();
+    try{
+      const r=await fetch(CFG.api.replace(/\/$/,"")+"/buscar?q="+encodeURIComponent(q));
+      const j=await r.json();
+      if(!r.ok||j.indisponivel){indisponivel=true;delete BUSCADOS[k]}
+      if(j.parcial)delete BUSCADOS[k];
+      const ja=new Set(DB.produtos.map(p=>p.n));let novos=0;
+      for(const p of j.produtos||[])if(!ja.has(p.n)){DB.produtos.push(p);EXTRA[p.n]=p;novos++}
+      if(novos){save();build()}
+    }catch(e){indisponivel=true;delete BUSCADOS[k]}
+    buscando--;render();
+  },700);
+}
 function render(){
   const q=$("q").value.trim().toLowerCase(),g=$("gen").value,b=$("brand").value,s=$("sort").value;
   let L=P.filter(p=>(!g||p.gender===g)&&(!b||p.brand===b)&&(!q||p.full.toLowerCase().includes(q)));
   if(s==="asc")L.sort((a,b)=>a.price-b.price);else if(s==="desc")L.sort((a,b)=>b.price-a.price);else if(s==="az")L.sort((a,b)=>a.full.localeCompare(b.full));
   const dt=DB.atualizadoEm?new Date(DB.atualizadoEm).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"}):"";
-  $("count").textContent=L.length+" perfumes"+(L.length>LIMIT?" (mostrando "+LIMIT+")":"")+(dt?" · preços atualizados em "+dt:"");
+  $("count").textContent=L.length+" perfumes"+(L.length>LIMIT?" (mostrando "+LIMIT+")":"")+(buscando?" · buscando mais perfumes…":"")+(q&&indisponivel&&!buscando?" · busca ampliada indisponível no momento":"")+(dt&&!q?" · preços atualizados em "+dt:"");
   $("more").hidden=L.length<=LIMIT;
-  $("grid").innerHTML=L.length?L.slice(0,LIMIT).map(p=>{const k=esc(p.full).replace(/'/g,"&#39;");return `<div class="card">${pic(p)}<div class="brand">${esc(p.brand)}</div><div class="name">${esc(p.name)}</div><div class="tags">${p.gender}${p.conc?" · "+p.conc:""}${p.ml?" · "+p.ml+" ml":""}</div><div class="price">${brl(p.price)}</div>${cart[p.full]?`<div class="qty"><button data-n="${k}" data-d="-1">−</button><span>${cart[p.full]}</span><button data-n="${k}" data-d="1">+</button></div>`:`<button data-n="${k}" data-d="1">Adicionar</button>`}</div>`}).join(""):'<div class="empty">Nenhum perfume encontrado.</div>';
+  $("grid").innerHTML=L.length?L.slice(0,LIMIT).map(p=>{const k=esc(p.full).replace(/'/g,"&#39;");return `<div class="card">${pic(p)}<div class="brand">${esc(p.brand)}</div><div class="name">${esc(p.name)}</div><div class="tags">${p.gender}${p.conc?" · "+p.conc:""}${p.ml?" · "+p.ml+" ml":""}</div>${precoCard(p)}${cart[p.full]?`<div class="qty"><button data-n="${k}" data-d="-1">−</button><span>${cart[p.full]}</span><button data-n="${k}" data-d="1">+</button></div>`:`<button data-n="${k}" data-d="1">Adicionar</button>`}</div>`}).join(""):`<div class="empty">${buscando?"Procurando…":"Nenhum perfume encontrado.<br>Não achou o que procura? Peça pelo WhatsApp que consultamos para você."}</div>`;
 }
-function totals(){let n=0,t=0;for(const k in cart){const p=byName(k);if(!p)continue;n+=cart[k];t+=cart[k]*p.price}return{n,t}}
+function totals(){let n=0,t=0,c=0;for(const k in cart){const p=byName(k);if(!p)continue;n+=cart[k];if(p.stale)c++;else t+=cart[k]*p.price}return{n,t,c}}
 function updateBar(){const{n,t}=totals();$("items").textContent=n?n+(n>1?" itens":" item"):"Nenhum item";$("total").textContent=brl(t)}
 function renderLines(){
   const ks=Object.keys(cart);
-  $("lines").innerHTML=ks.length?ks.map(k=>{const p=byName(k),e=esc(k).replace(/'/g,"&#39;");return `<div class="line"><div class="n">${esc(p.brand+" "+p.name)}<div class="sub">${p.ml?p.ml+" ml · ":""}${brl(p.price)} cada</div></div><div class="qty"><button class="btn ghost" style="width:32px;height:32px;padding:0" data-n="${e}" data-d="-1">−</button><span>${cart[k]}</span><button class="btn ghost" style="width:32px;height:32px;padding:0" data-n="${e}" data-d="1">+</button></div></div>`}).join(""):'<div class="empty">Seu orçamento está vazio.</div>';
-  $("dtotal").textContent=brl(totals().t);
+  $("lines").innerHTML=ks.length?ks.map(k=>{const p=byName(k),e=esc(k).replace(/'/g,"&#39;");return `<div class="line"><div class="n">${esc(p.brand+" "+p.name)}<div class="sub">${p.ml?p.ml+" ml · ":""}${p.stale?"preço a consultar":brl(p.price)+" cada"}</div></div><div class="qty"><button class="btn ghost" style="width:32px;height:32px;padding:0" data-n="${e}" data-d="-1">−</button><span>${cart[k]}</span><button class="btn ghost" style="width:32px;height:32px;padding:0" data-n="${e}" data-d="1">+</button></div></div>`}).join(""):'<div class="empty">Seu orçamento está vazio.</div>';
+  const {t,c}=totals();
+  $("dtotal").textContent=brl(t)+(c?" + a consultar":"");
   refreshLink();
 }
 function message(){
-  const ks=Object.keys(cart),name=$("cname").value.trim(),note=$("cnote").value.trim(),L=DB.lojas||[];
+  const ks=Object.keys(cart),name=$("cname").value.trim(),note=$("cnote").value.trim();
   let m="Olá! Gostaria de um orçamento"+(name?" ("+name+")":"")+":\n\n";
-  ks.forEach((k,i)=>{const p=byName(k),o=p.offers[0];
-    m+=`${i+1}) ${p.brand} ${p.name}${p.ml?" "+p.ml+"ml":""} (${p.gender}) — ${cart[k]}x ${brl(p.price)} = ${brl(cart[k]*p.price)}\n   Loja: ${L[o[0]]} (US$ ${o[1].toFixed(2)}) cód. ${o[2]}${p.offers.length>1?" | outras: "+p.offers.slice(1).map(x=>L[x[0]]+" US$ "+x[1].toFixed(2)).join(", "):""}\n`});
-  m+=`\nTotal estimado: ${brl(totals().t)}`;
+  ks.forEach((k,i)=>{const p=byName(k),q=cart[k];
+    const valor=p.stale?`${q}x preço a consultar`:`${q}x ${brl(p.price)} = ${brl(q*p.price)}`;
+    m+=`${i+1}) ${p.brand} ${p.name}${p.ml?" "+p.ml+"ml":""} (${p.gender}) — ${valor} | Ref: ${String(p.ref||"").split(",").join(", ")} | ${lido(p.dias)}\n`});
+  const {t,c}=totals();
+  m+=`\nTotal estimado: ${brl(t)}`+(c?" (+ itens com preço a consultar)":"");
   if(note)m+="\nObs.: "+note;
-  return m;
+  return m+"\n\n"+AVISO;
 }
 function refreshLink(){
   const a=$("send"),ok=Object.keys(cart).length>0&&/^\d{10,15}$/.test(CFG.whatsapp||"")&&CFG.whatsapp!=="5500000000000";
@@ -151,7 +182,7 @@ function refreshLink(){
   a.onclick=e=>{if(!ok){e.preventDefault();alert(Object.keys(cart).length?"WhatsApp do vendedor ainda não configurado.":"Adicione ao menos um perfume.")}};
 }
 document.addEventListener("click",e=>{const b=e.target.closest("button[data-n]");if(!b)return;const n=b.dataset.n;setQty(n,(cart[n]||0)+Number(b.dataset.d))});
-["q","gen","brand","sort"].forEach(id=>$(id).addEventListener("input",()=>{LIMIT=60;render()}));
+["q","gen","brand","sort"].forEach(id=>$(id).addEventListener("input",()=>{LIMIT=60;render();if(id==="q")buscarMais()}));
 $("more").onclick=()=>{LIMIT+=60;render()};
 ["cname","cnote"].forEach(id=>$(id).addEventListener("input",refreshLink));
 $("open").onclick=()=>{renderLines();$("dlg").showModal()};
@@ -161,6 +192,8 @@ $("close").onclick=()=>$("dlg").close();
     const bust="?t="+Math.floor(Date.now()/60000);
     const [c,d]=await Promise.all([fetch("config.json"+bust).then(r=>r.json()).catch(()=>({})),fetch("data.json"+bust).then(r=>r.json())]);
     CFG={...CFG,...c};DB=d;
+    const ja=new Set(DB.produtos.map(p=>p.n));
+    for(const n in EXTRA){if(ja.has(n))delete EXTRA[n];else DB.produtos.push(EXTRA[n])}
     if(CFG.titulo)$("titulo").textContent=CFG.titulo;
     build();render();updateBar();
   }catch(e){$("count").textContent="Não foi possível carregar o catálogo. Tente novamente em instantes."}

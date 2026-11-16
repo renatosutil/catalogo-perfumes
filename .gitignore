@@ -1,2 +1,9 @@
 node_modules/
 scraper/teste-saida.json
+scraper/*.json.tmp
+# dados em texto puro (só existem cifrados no repositório)
+scraper/bruto.json
+scraper/estado.json
+scraper/lojas.json
+scraper/*.processando
+.env

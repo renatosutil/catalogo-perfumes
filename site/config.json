@@ -1,8 +1,7 @@
 {
   "whatsapp": "5541996182105",
-  "acrescimoCotacao": 0.05,
-  "margem": 0.35,
-  "cotacao": null,
+  "diasPrecoValido": 7,
   "mostrarFotos": true,
-  "titulo": "Perfumes importados — monte seu orçamento"
+  "titulo": "Perfumes importados — monte seu orçamento",
+  "api": "https://catalogo-api.54.20.178.81.sslip.io"
 }

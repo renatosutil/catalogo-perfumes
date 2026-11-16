@@ -1,204 +1,164 @@
-// Coleta perfumes e preços das lojas listadas em lojas.json, via ComprasParaguai.
-// Saída: site/data.json. Se a coleta falhar ou vier quase vazia, o arquivo antigo é mantido.
-import * as cheerio from "cheerio";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+// Coletor leve. Lê scraper/bruto.json e scraper/estado.json (texto puro, fora do git) e:
+//  1. varre as buscas por loja das lojas vencidas (agenda em lojas.json, campo frequenciaDias),
+//     atualizando preço e data das ofertas já conhecidas (chave lojaIdx:código);
+//     ofertas desconhecidas vão para a fila de "novos" e não entram no catálogo nesta varredura;
+//  2. 1x por semana, descobre modelos novos nas 10 primeiras páginas de cada loja e abre a página
+//     só dos que ainda não estão no catálogo (no máximo MAX_NOVOS);
+//  3. junta os perfumes achados pelo serviço de busca (arquivo DESCOBERTOS).
+// Se a fonte responder 403/429: para na hora, não grava nada, imprime ::warning:: e sai com código 0.
+import { existsSync, renameSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import {
+  caminho, lerJson, gravarJson, lerLojas, hoje, dias, criarCliente, Bloqueio, LimitePedidos,
+  lerBusca, lerModelos, lerOfertas, lerCotacao, ofertasDasLojas, normalizar,
+} from "./comum.mjs";
 
-const AQUI = dirname(fileURLToPath(import.meta.url));
-const BASE = (process.env.BASE_URL || "https://mobile.comprasparaguai.com.br").replace(/\/$/, "");
-const SAIDA = process.env.SAIDA || join(AQUI, "..", "site", "data.json");
-const MINIMO_OK = Number(process.env.MINIMO_OK || 50);
-const ESPERA_MS = Number(process.env.ESPERA_MS || 350);
-const LOJAS = JSON.parse(readFileSync(join(AQUI, "lojas.json"), "utf8"));
-const UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36";
+const TERMOS_PADRAO = ["perfume masculino", "perfume feminino", "perfume unissex"];
+const POR_PAGINA = 20;
+const MAX_NOVOS = Number(process.env.MAX_NOVOS || 150);
+const PAGINAS_NOVOS = Number(process.env.PAGINAS_NOVOS || 10);
+const DIAS_NOVOS = 7;
 
-const dorme = (ms) => new Promise((r) => setTimeout(r, ms));
-
-async function baixar(url, tentativas = 3) {
-  let erro;
-  for (let i = 1; i <= tentativas; i++) {
-    try {
-      const r = await fetch(url, { headers: { "user-agent": UA, "accept-language": "pt-BR,pt;q=0.9" } });
-      if (r.status === 403 || r.status === 429) throw new Error(`HTTP ${r.status} (acesso bloqueado ou limitado)`);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return await r.text();
-    } catch (e) {
-      erro = e;
-      await dorme(1500 * i);
-    }
-  }
-  throw new Error(`${url}: ${erro.message}`);
-}
-
-export const paraNumero = (txt) => {
-  const m = /(\d[\d.]*,?\d*)/.exec(String(txt || ""));
-  if (!m) return NaN;
-  return parseFloat(m[1].replace(/\./g, "").replace(",", "."));
-};
-
-export const idDoLink = (href) => (/_(\d+)\/?$/.exec(href || "") || [])[1] || null;
-
-// Lista de resultados: devolve [{id, href, nome, img}]
-export function lerListagem(html) {
-  const $ = cheerio.load(html);
-  const itens = [];
-  $(".promocao-produtos-item-text").each((_, el) => {
-    const a = $(el).find(".promocao-item-nome a").first();
-    const href = a.attr("href");
-    const id = idDoLink(href);
-    if (!id) return;
-    const im = $(el).find("img").first();
-    let img = im.attr("data-src") || im.attr("src") || "";
-    if (/loading-images|\.svg$/.test(img)) img = im.attr("data-src") || "";
-    itens.push({ id, href, nome: a.text().trim().replace(/^Perfume\s+/i, ""), img: img || null });
-  });
-  const m = /\(\s*([\d.]+)\s*Resultados/i.exec($("body").text());
-  const total = m ? Number(m[1].replace(/\./g, "")) : null;
-  return { itens, total };
-}
-
-// Página do produto: devolve ofertas [{loja, usd, cod}] (todas as lojas)
-export function lerOfertas(html) {
-  const $ = cheerio.load(html);
-  const ofertas = [];
-  $(".promocao-produtos-item-text").each((_, el) => {
-    const bloco = $.html(el);
-    const mLoja = /advertiser(?:'|&#39;|&apos;|")\s*:\s*(?:'|&#39;|&apos;|")(.*?)(?:'|&#39;|&apos;|")\s*[,}]/.exec(bloco);
-    if (!mLoja) return;
-    const precoTxt = $(el).find(".promocao-item-preco-oferta strong, .promocao-item-preco-oferta span").first().text();
-    const usd = paraNumero(precoTxt);
-    if (!usd) return;
-    const cod = (/Código:\s*(\S+)/.exec($(el).text()) || [])[1] || "";
-    ofertas.push({ loja: mLoja[1].trim(), usd, cod });
-  });
-  return ofertas;
-}
-
-export function lerCotacao(html) {
-  const txt = cheerio.load(html)("body").text().replace(/\s+/g, " ");
-  const m = /Cota[çc][ãa]o do D[óo]lar\s*R\$\s*([\d.,]+)/i.exec(txt);
-  return m ? paraNumero(m[1]) : null;
-}
-
-// Lê o modo em scraper/modo.json (ou variáveis MODO / QUANTIDADE):
-//   { "modo": "top", "quantidade": 200 }  -> os N perfumes mais procurados que as lojas têm
-//   { "modo": "todos" }                    -> todos os perfumes das lojas de lojas.json
-function lerModo() {
-  let m = { modo: "top", quantidade: 200 };
-  try { m = { ...m, ...JSON.parse(readFileSync(join(AQUI, "modo.json"), "utf8")) }; } catch {}
-  if (process.env.MODO) m.modo = process.env.MODO;
-  if (process.env.QUANTIDADE) m.quantidade = Number(process.env.QUANTIDADE);
-  return m;
-}
-
-// Executa tarefas com no máximo N em paralelo, mantendo a ordem dos resultados.
-async function emParalelo(itens, n, fn) {
-  const res = new Array(itens.length);
-  let prox = 0;
-  await Promise.all(Array.from({ length: Math.min(n, itens.length) }, async () => {
-    while (prox < itens.length) {
-      const k = prox++;
-      res[k] = await fn(itens[k], k);
-    }
-  }));
-  return res;
-}
-
-async function principal() {
+export async function coletar({ cliente = criarCliente(), log = console.log } = {}) {
   const inicio = Date.now();
-  const { modo, quantidade } = lerModo();
-  const nomes = LOJAS.map((l) => l.nome);
-  const CONC = Number(process.env.CONCORRENCIA || 3);
-  console.log(`Fonte: ${BASE} | modo: ${modo}${modo === "top" ? " " + quantidade : ""} | lojas (por prioridade): ${nomes.join(", ")}`);
+  const dia = hoje();
+  const lojas = lerLojas();
+  const nomes = lojas.map((l) => l.nome);
+  const termos = lerJson(caminho("termos.json"), TERMOS_PADRAO);
+  const bruto = lerJson(caminho("bruto.json"));
+  const estado = lerJson(caminho("estado.json"), {});
+  estado.varredura ||= {};
+  estado.fila ||= [];
+  const soLojas = process.env.SO_LOJAS ? process.env.SO_LOJAS.split(",") : null;
+  const naoSalvar = process.env.NAO_SALVAR === "1";
 
-  const totaisPorLoja = {};
-  let erros = 0;
-  const ofertasDe = async (c) => {
-    try {
-      const ofertas = lerOfertas(await baixar(`${BASE}${c.href.startsWith("/") ? "" : "/"}${c.href}`));
-      const melhor = {};
-      for (const o of ofertas) {
-        const k = nomes.indexOf(o.loja);
-        if (k < 0) continue;
-        if (!melhor[k] || o.usd < melhor[k][0]) melhor[k] = [o.usd, o.cod];
-      }
-      const o = Object.entries(melhor).map(([k, [usd, cod]]) => [Number(k), usd, cod]);
-      return o.length ? { n: c.nome, i: c.img, o } : null;
-    } catch (e) {
-      erros++;
-      console.warn("  falhou:", c.nome, e.message);
-      return null;
-    } finally {
-      await dorme(ESPERA_MS);
-    }
-  };
-
-  let produtos = [];
-  if (modo === "todos") {
-    // 1) candidatos: todas as páginas de cada loja, na ordem de prioridade
-    const candidatos = new Map();
-    for (const loja of LOJAS) {
-      for (let p = 1; p <= 2000; p++) {
-        const { itens, total } = lerListagem(await baixar(`${BASE}/perfume/?page=${p}&loja=${loja.slug}`));
-        if (p === 1) totaisPorLoja[loja.nome] = total;
-        if (!itens.length) break;
-        for (const it of itens) if (!candidatos.has(it.id)) candidatos.set(it.id, it);
-        await dorme(ESPERA_MS);
-      }
-      console.log(`  ${loja.nome}: ${totaisPorLoja[loja.nome] ?? "?"} perfumes | candidatos até agora: ${candidatos.size}`);
-    }
-    // 2) ofertas de cada um
-    const lista = [...candidatos.values()];
-    let feitos = 0;
-    const res = await emParalelo(lista, CONC, async (c) => {
-      const r = await ofertasDe(c);
-      if (++feitos % 100 === 0) console.log(`  ${feitos}/${lista.length} lidos...`);
-      return r;
-    });
-    produtos = res.filter(Boolean);
-  } else {
-    // modo "top": percorre a lista geral por relevância até juntar N perfumes que as lojas tenham
-    const vistos = new Set();
-    for (let p = 1; p <= 200 && produtos.length < quantidade; p++) {
-      const { itens, total } = lerListagem(await baixar(`${BASE}/perfume/?page=${p}`));
-      if (p === 1) totaisPorLoja.geral = total;
-      if (!itens.length) break;
-      const novos = itens.filter((it) => !vistos.has(it.id));
-      novos.forEach((it) => vistos.add(it.id));
-      const res = await emParalelo(novos, CONC, ofertasDe);
-      for (const r of res) if (r && produtos.length < quantidade) produtos.push(r);
-      console.log(`  página ${p}: ${produtos.length}/${quantidade}`);
-      await dorme(ESPERA_MS);
-    }
+  // índice das ofertas conhecidas: "lojaIdx:cod" -> oferta (array mutável dentro do produto)
+  const indice = new Map();
+  const ids = new Set(), nomesConhecidos = new Set();
+  for (const p of bruto.produtos) {
+    if (p.id) ids.add(String(p.id));
+    nomesConhecidos.add(normalizar(p.n));
+    for (const o of p.o) indice.set(`${o[0]}:${o[2]}`, o);
   }
 
-  // cotação do dólar mostrada no site
-  let cotacao = null;
+  // agenda: lojas diárias vencidas + no máximo 1 loja semanal (a mais atrasada)
+  const vencidas = lojas
+    .map((l, idx) => ({ ...l, idx, freq: Number(l.frequenciaDias || 1), atraso: dias(estado.varredura[l.slug], dia) }))
+    .filter((l) => (soLojas ? soLojas.includes(l.slug) : l.atraso >= l.freq));
+  const diarias = vencidas.filter((l) => soLojas || l.freq <= 1);
+  const semanal = soLojas ? [] : vencidas.filter((l) => l.freq > 1).sort((a, b) => b.atraso - a.atraso).slice(0, 1);
+  const varrer = [...diarias, ...semanal];
+  const fazerNovos = !soLojas && !semanal.length && dias(estado.novos, dia) >= DIAS_NOVOS;
+  log(`Dia ${dia} | lojas a varrer: ${varrer.map((l) => l.nome).join(", ") || "nenhuma"} | perfumes novos: ${fazerNovos ? "sim" : "não"}`);
+
+  const resumo = [];
+  const fila = new Map(estado.fila.map((f) => [f.k, f]));
+  let cotacao = null, novosAdicionados = 0;
   try {
-    cotacao = lerCotacao(await baixar(`${BASE}/`));
+    cotacao = lerCotacao((await cliente.get("/")).html);
+
+    for (const loja of varrer) {
+      const vistos = new Set();
+      let atualizadas = 0, desconhecidas = 0;
+      for (const termo of termos) {
+        for (let pag = 1; pag <= 500; pag++) {
+          const q = encodeURIComponent(termo);
+          const { itens, total } = lerBusca((await cliente.get(`/busca/?q=${q}&loja=${loja.slug}&page=${pag}`)).html);
+          for (const it of itens) {
+            if (it.loja !== loja.nome) continue;
+            const k = `${loja.idx}:${it.cod}`;
+            if (vistos.has(k)) continue;
+            vistos.add(k);
+            const o = indice.get(k);
+            if (o) { o[1] = it.usd; o[3] = dia; atualizadas++; }
+            else { desconhecidas++; fila.set(k, { k, n: it.nome, usd: it.usd, t: dia }); }
+          }
+          if (!itens.length || pag * POR_PAGINA >= (total || 0)) break;
+        }
+      }
+      const doCatalogo = [...indice.keys()].filter((k) => k.startsWith(loja.idx + ":")).length;
+      resumo.push({ loja: loja.nome, slug: loja.slug, ofertasLidas: vistos.size, atualizadas, doCatalogo, desconhecidas });
+      estado.varredura[loja.slug] = dia;
+    }
+
+    if (fazerNovos) {
+      const candidatos = new Map();
+      for (const loja of lojas) {
+        for (let pag = 1; pag <= PAGINAS_NOVOS; pag++) {
+          const { itens, total } = lerModelos((await cliente.get(`/perfume/?page=${pag}&loja=${loja.slug}`)).html);
+          for (const m of itens) {
+            if (ids.has(m.id) || nomesConhecidos.has(normalizar(m.nome)) || candidatos.has(m.id)) continue;
+            candidatos.set(m.id, m);
+          }
+          if (!itens.length || pag * POR_PAGINA >= (total || 0)) break;
+        }
+      }
+      log(`  modelos fora do catálogo nas ${PAGINAS_NOVOS} primeiras páginas: ${candidatos.size} (abrindo até ${MAX_NOVOS})`);
+      for (const m of [...candidatos.values()].slice(0, MAX_NOVOS)) {
+        const o = ofertasDasLojas(lerOfertas((await cliente.get(m.href)).html), nomes, dia);
+        if (!o.length) continue;
+        bruto.produtos.push({ id: m.id, n: m.nome, i: m.img, o });
+        ids.add(m.id);
+        for (const x of o) { indice.set(`${x[0]}:${x[2]}`, x); fila.delete(`${x[0]}:${x[2]}`); }
+        novosAdicionados++;
+      }
+      estado.novos = dia;
+    }
   } catch (e) {
-    console.warn("  cotação não lida:", e.message);
+    const s = cliente.stats();
+    if (e instanceof Bloqueio) {
+      log(`::warning::Fonte de preços respondeu ${e.message}. Coleta interrompida; dados anteriores mantidos.`);
+      log(`Pedidos: ${s.pedidos} | ${(s.bytes / 1048576).toFixed(1)} MB | ${Math.round((Date.now() - inicio) / 1000)}s`);
+      return { ok: false, bloqueio: true };
+    }
+    if (e instanceof LimitePedidos) {
+      log(`::warning::${e.message}; nada gravado.`);
+      imprimirResumo(resumo, s, inicio, log);
+      return { ok: false, limite: true, resumo };
+    }
+    throw e;
   }
 
-  if (produtos.length < MINIMO_OK) {
-    throw new Error(`Só ${produtos.length} produtos coletados (mínimo ${MINIMO_OK}); mantendo o data.json anterior.`);
-  }
-  if (!cotacao && existsSync(SAIDA)) {
-    try { cotacao = JSON.parse(readFileSync(SAIDA, "utf8")).cotacao ?? null; } catch {}
+  // perfumes achados pelo serviço de busca sob demanda
+  const descobertos = process.env.DESCOBERTOS;
+  let processando = null;
+  if (descobertos && existsSync(descobertos)) {
+    processando = descobertos + ".processando";
+    renameSync(descobertos, processando);
+    for (const p of lerJson(processando, [])) {
+      if (ids.has(String(p.id)) || nomesConhecidos.has(normalizar(p.n))) continue;
+      bruto.produtos.push(p);
+      ids.add(String(p.id));
+      nomesConhecidos.add(normalizar(p.n));
+      novosAdicionados++;
+    }
   }
 
-  mkdirSync(dirname(SAIDA), { recursive: true });
-  writeFileSync(
-    SAIDA,
-    JSON.stringify({ atualizadoEm: new Date().toISOString(), modo, cotacao, lojas: nomes, totaisPorLoja, produtos })
-  );
-  console.log(`OK: ${produtos.length} perfumes, ${erros} erros, ${Math.round((Date.now() - inicio) / 1000)}s. Cotação: ${cotacao}`);
+  if (cotacao) { bruto.cotacao = cotacao; bruto.cotacaoEm = dia; }
+  estado.fila = [...fila.values()].sort((a, b) => (a.t < b.t ? 1 : -1)).slice(0, 3000);
+  const s = cliente.stats();
+  imprimirResumo(resumo, s, inicio, log);
+  log(`Perfumes novos no catálogo: ${novosAdicionados} | total: ${bruto.produtos.length} | fila de ofertas desconhecidas: ${estado.fila.length} | cotação: ${cotacao ?? "não lida"}`);
+
+  if (naoSalvar) {
+    log("(teste: nada gravado)");
+    if (processando) renameSync(processando, descobertos);
+    return { ok: true, resumo };
+  }
+  gravarJson(caminho("bruto.json"), bruto);
+  gravarJson(caminho("estado.json"), estado);
+  if (processando) rmSync(processando);
+  return { ok: true, resumo };
+}
+
+function imprimirResumo(resumo, s, inicio, log) {
+  for (const r of resumo) {
+    const pct = r.doCatalogo ? ((100 * r.atualizadas) / r.doCatalogo).toFixed(1) : "-";
+    log(`  ${r.loja}: ${r.ofertasLidas} ofertas lidas | cobertura do catálogo ${r.atualizadas}/${r.doCatalogo} (${pct}%) | desconhecidas: ${r.desconhecidas}`);
+  }
+  log(`Pedidos: ${s.pedidos} | ${(s.bytes / 1048576).toFixed(1)} MB | ${Math.round((Date.now() - inicio) / 1000)}s`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  principal().catch((e) => {
-    console.error("ERRO:", e.message);
-    process.exit(1);
-  });
+  coletar().catch((e) => { console.error("ERRO:", e.message); process.exitCode = 1; });
 }

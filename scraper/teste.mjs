@@ -1,87 +1,188 @@
-// Teste do coletor contra um servidor falso que imita o HTML do ComprasParaguai.
+// Testes do coletor, da publicação, da criptografia e do serviço de busca contra um servidor falso
+// que imita o HTML da fonte de preços. Não acessa a internet.
 import http from "node:http";
 import { spawn } from "node:child_process";
-import { readFileSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomBytes } from "node:crypto";
 import assert from "node:assert/strict";
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const SAIDA = join(AQUI, "teste-saida.json");
+const LOJAS = [
+  { slug: "loja-alfa", nome: "Loja Alfa", frequenciaDias: 1 },
+  { slug: "loja-beta", nome: "Loja Beta", frequenciaDias: 7 },
+];
+const HOJE = "2026-11-20";
+const CHAVE = randomBytes(32).toString("hex");
 
-const card = (id, nome, usd) => `
-<div class="promocao-produtos-item-text"><div class="promocao-item-img"><a href="/perfume-${id}_${({asad:1001,yara:1002,raro:1003})[id]}/">
-<img src="/static/images/loading-images.svg" data-src="https://img.exemplo/${id}.png" class="lozad"></a></div>
-<div class="promocao-item-info"><div class="promocao-item-nome"><a href="/perfume-${id}_${({asad:1001,yara:1002,raro:1003})[id]}/">Perfume ${nome}</a></div></div>
-<div class="promocao-item-preco-oferta"><div class="price-model"><span> US$&nbsp;${usd}<br></span></div></div></div>`;
-
-const oferta = (loja, usd, cod) => `
-<div class="promocao-produtos-item-text"><div class="promocao-item-nome"><a href="/x/">Item da loja</a></div>
+// ---------- servidor falso ----------
+const oferta = (loja, usd, cod, nome = "Item") => `
+<div class="promocao-produtos-item-text"><div class="promocao-item-nome"><a href="/x__1/">${nome}</a></div>
 <div class="promocao-item-caracteristicas"> Código: ${cod} </div>
-<a onclick="gtag( 'event', 'add_to_wishlist', { 'description': 'Adição', 'product': 'X', 'advertiser': '${loja}' } )">w</a>
+<a onclick="gtag( 'event', 'add_to_wishlist', { 'product': 'X', 'advertiser': '${loja}' } )">w</a>
 <div class="promocao-item-preco-oferta flex column"><span><strong>US$ ${usd}</strong></span><div>R$ 1,00</div></div></div>`;
+const modelo = (href, nome) => `
+<div class="promocao-produtos-item-text"><img src="/static/images/loading-images.svg" data-src="https://img.exemplo${href}.png">
+<div class="promocao-item-nome"><a href="${href}">Perfume ${nome}</a></div></div>`;
+const pagina = (total, corpo) => `<body><h1>(${total} Resultados)</h1>${corpo}</body>`;
 
-const PRODUTOS = {
-  asad: ["Lattafa Asad Eau de Parfum Masculino 100ML", "1.225,00"],
-  yara: ["Lattafa Yara Eau de Parfum Feminino 100ML", "19,50"],
-  raro: ["Perfume Sem Oferta Nas Lojas 100ML", "50,00"],
-};
-
+let modo = "normal";
+const pedidos = [];
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
+  pedidos.push(u.pathname + u.search);
   res.setHeader("content-type", "text/html; charset=utf-8");
+  const fim = (html) => res.end(html);
+  if (u.pathname === "/") return fim("<body><div>Cotação do Dólar</div><span>R$ 5,65</span></body>");
+  if (u.pathname === "/busca/") {
+    if (modo === "429") { res.statusCode = 429; return fim("devagar"); }
+    const q = u.searchParams.get("q"), loja = u.searchParams.get("loja"), pag = Number(u.searchParams.get("page") || 1);
+    if (!loja && q === "asad") {
+      return fim(pagina(3, modelo("/creme-corporal-asad_9006/", "Creme Asad") + modelo("/perfume-marca-x_5001/", "Marca X Masculino 100ML") + modelo("/kit-perfume-asad-duo_9005/", "Kit Asad Duo Masculino")));
+    }
+    if (loja === "loja-alfa" && q === "perfume masculino" && pag === 1) {
+      return fim(pagina(2, oferta("Loja Alfa", "18,50", "111") + oferta("Loja Alfa", "10,00", "999", "Perfume Desconhecido")));
+    }
+    return fim(pagina(0, ""));
+  }
   if (u.pathname === "/perfume/") {
-    const p = Number(u.searchParams.get("page") || 1);
-    if (p > 1) return res.end("<body>(2 Resultados</body>");
-    const itens = Object.entries(PRODUTOS).map(([id, [n, usd]]) => card(id, n.replace(/^Perfume /, ""), usd)).join("");
-    return res.end(`<body><h1>PERFUME (3 Resultados)</h1>${itens}</body>`);
+    const loja = u.searchParams.get("loja");
+    if (loja === "loja-alfa") return fim(pagina(4, modelo("/creme-corporal-y_9004/", "Creme") + modelo("/perfume-marca-x_5001/", "Marca X Masculino 100ML") + modelo("/perfume-novo-um_9001/", "Novo Um Feminino 100ML") + modelo("/perfume-novo-dois_9002/", "Novo Dois 100ML")));
+    if (loja === "loja-beta") return fim(pagina(1, modelo("/perfume-novo-dois_9002/", "Novo Dois 100ML")));
+    return fim(pagina(0, ""));
   }
-  if (u.pathname.startsWith("/perfume-asad")) {
-    return res.end(`<body>${oferta("Cellshop", "21,00", "111")}${oferta("Nissei", "19,5", "222")}${oferta("Nissei", "20,00", "223")}${oferta("Outra Loja", "5,00", "9")}</body>`);
-  }
-  if (u.pathname.startsWith("/perfume-yara")) {
-    return res.end(`<body>${oferta("Mega Eletrônicos", "18,00", "333")}</body>`);
-  }
-  if (u.pathname.startsWith("/perfume-raro")) {
-    return res.end(`<body>${oferta("Loja Desconhecida", "10,00", "444")}</body>`);
-  }
-  if (u.pathname === "/") return res.end("<body><div>Cotação do Dólar</div><span>R$ 5,65</span></body>");
+  if (u.pathname === "/perfume-novo-um_9001/") return fim(`<body>${oferta("Loja Alfa", "25,00", "333")}${oferta("Outra Loja", "5,00", "1")}${oferta("Loja Beta", "27,00", "444")}</body>`);
+  if (u.pathname === "/kit-perfume-asad-duo_9005/") return fim(`<body>${oferta("Loja Beta", "30,00", "555")}</body>`);
   res.statusCode = 404;
-  res.end("nao");
+  fim("não");
 });
+await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const FONTE = `http://127.0.0.1:${server.address().port}`;
 
-await new Promise((r) => server.listen(0, r));
-const porta = server.address().port;
-
-const rodar = (extra) => new Promise((resolve) => {
-  const f = spawn("node", [join(AQUI, "scrape.mjs")], {
-    env: { ...process.env, BASE_URL: `http://127.0.0.1:${porta}`, SAIDA, MINIMO_OK: "1", ESPERA_MS: "1", ...extra },
-  });
-  let stdout = "", stderr = "";
-  f.stdout.on("data", (b) => (stdout += b));
-  f.stderr.on("data", (b) => (stderr += b));
-  f.on("close", (status) => resolve({ status, stdout, stderr }));
+// ---------- utilitários ----------
+const dir = mkdtempSync(join(tmpdir(), "catalogo-teste-"));
+const arq = (n) => join(dir, n);
+const ler = (n) => JSON.parse(readFileSync(arq(n), "utf8"));
+const grava = (n, o) => writeFileSync(arq(n), JSON.stringify(o));
+const ENV = { DADOS_DIR: dir, FONTE_URL: FONTE, ESPERA_MS: "1", HOJE, DADOS_CHAVE: CHAVE, MARGEM: "0.35", ACRESCIMO_COTACAO: "0.05", DESCOBERTOS: arq("descobertos.json") };
+const rodar = (script, args = [], extra = {}) => new Promise((resolve) => {
+  const f = spawn(process.execPath, [join(AQUI, script), ...args], { env: { ...process.env, ...ENV, ...extra } });
+  let out = "";
+  f.stdout.on("data", (b) => (out += b));
+  f.stderr.on("data", (b) => (out += b));
+  f.on("close", (status) => resolve({ status, out }));
 });
+const produtoX = () => ({ id: "5001", n: "Marca X Masculino 100ML", i: null, o: [[0, 20, "111", "2026-11-01"], [1, 30, "222", "2026-11-10"]] });
+let ok = 0;
+const passo = (nome) => console.log(`✔ ${nome}`) || ok++;
 
-// modo "top" limitado a 1: deve parar no primeiro perfume que as lojas tenham
-let r = await rodar({ MODO: "top", QUANTIDADE: "1" });
-assert.equal(r.status, 0, r.stderr);
-assert.equal(JSON.parse(readFileSync(SAIDA, "utf8")).produtos.length, 1, "modo top deve respeitar a quantidade");
-rmSync(SAIDA);
+try {
+  grava("lojas.json", LOJAS);
 
-// modo "todos"
-r = await rodar({ MODO: "todos" });
-server.close();
-console.log(r.stdout + r.stderr);
-const d = JSON.parse(readFileSync(SAIDA, "utf8"));
-rmSync(SAIDA);
-assert.equal(d.cotacao, 5.65);
-assert.equal(d.produtos.length, 2, "produto sem oferta nas lojas deve ser descartado");
-const asad = d.produtos.find((p) => p.n.startsWith("Lattafa Asad"));
-const nomes = d.lojas;
-// Cellshop 21, Nissei = menor entre 19.5 e 20
-assert.deepEqual(asad.o.map(([k, u, c]) => [nomes[k], u, c]).sort(), [["Cellshop", 21, "111"], ["Nissei", 19.5, "222"]].sort());
-assert.equal(asad.i, "https://img.exemplo/asad.png");
-const yara = d.produtos.find((p) => p.n.startsWith("Lattafa Yara"));
-assert.deepEqual(yara.o.map(([k, u, c]) => [nomes[k], u, c]), [["Mega Eletrônicos", 18, "333"]]);
-console.log("TESTE OK");
+  // 1. casamento por lojaIdx:cod + agenda por loja + fila de novos
+  grava("bruto.json", { versao: 1, cotacao: 5, produtos: [produtoX()] });
+  grava("estado.json", { varredura: { "loja-alfa": "2026-11-15", "loja-beta": "2026-11-18" }, novos: "2026-11-19" });
+  pedidos.length = 0;
+  let r = await rodar("scrape.mjs");
+  assert.equal(r.status, 0, r.out);
+  let b = ler("bruto.json"), e = ler("estado.json");
+  assert.deepEqual(b.produtos[0].o, [[0, 18.5, "111", HOJE], [1, 30, "222", "2026-11-10"]], "oferta conhecida atualiza usd e t");
+  assert.equal(b.produtos.length, 1, "oferta desconhecida não entra no catálogo");
+  assert.ok(e.fila.some((f) => f.k === "0:999"), "oferta desconhecida vai para a fila");
+  assert.equal(b.cotacao, 5.65);
+  passo("casamento por lojaIdx:cod (preço e data atualizados; desconhecida vai para a fila)");
+  assert.ok(!pedidos.some((p) => p.includes("loja=loja-beta")), "loja semanal não vencida não é varrida");
+  assert.equal(e.varredura["loja-alfa"], HOJE);
+  assert.equal(e.varredura["loja-beta"], "2026-11-18");
+  assert.ok(!pedidos.some((p) => p.startsWith("/perfume/")), "sem busca de novos fora da semana");
+  assert.match(r.out, /Pedidos: \d+ \| [\d.]+ MB/);
+  assert.match(r.out, /cobertura do catálogo 1\/1 \(100\.0%\)/);
+  passo("agenda por loja (só a loja vencida; imprime pedidos, MB, tempo e cobertura)");
+
+  // 2. perfumes novos (semanal): só modelos fora do catálogo, perfumes, no máximo MAX_NOVOS
+  grava("estado.json", { varredura: { "loja-alfa": HOJE, "loja-beta": "2026-11-19" }, novos: "2026-11-10" });
+  pedidos.length = 0;
+  r = await rodar("scrape.mjs", [], { MAX_NOVOS: "1" });
+  assert.equal(r.status, 0, r.out);
+  b = ler("bruto.json");
+  const novo = b.produtos.find((p) => p.id === "9001");
+  assert.ok(novo, "modelo novo entra no catálogo");
+  assert.deepEqual(novo.o, [[0, 25, "333", HOJE], [1, 27, "444", HOJE]], "ofertas [lojaIdx, usd, cod, t] só das nossas lojas");
+  assert.ok(!pedidos.includes("/perfume-marca-x_5001/"), "modelo já conhecido não é aberto");
+  assert.ok(!pedidos.some((p) => p.includes("creme")), "item que não é perfume é ignorado");
+  assert.ok(!pedidos.includes("/perfume-novo-dois_9002/"), "respeita MAX_NOVOS");
+  assert.equal(ler("estado.json").novos, HOJE);
+  passo("perfumes novos (ignora conhecidos e não-perfumes, respeita o limite)");
+
+  // 3. HTTP 429: para na hora, sai com 0, ::warning::, dados anteriores mantidos
+  grava("estado.json", { varredura: { "loja-alfa": "2026-11-15", "loja-beta": "2026-11-19" }, novos: "2026-11-19" });
+  const antesB = readFileSync(arq("bruto.json")), antesE = readFileSync(arq("estado.json"));
+  modo = "429";
+  r = await rodar("scrape.mjs");
+  modo = "normal";
+  assert.equal(r.status, 0, "429 sai com código 0");
+  assert.match(r.out, /::warning::/);
+  assert.ok(readFileSync(arq("bruto.json")).equals(antesB) && readFileSync(arq("estado.json")).equals(antesE), "nada gravado");
+  passo("429 (::warning::, código 0, dados mantidos)");
+
+  // 4. serviço de busca: devolve só campos públicos, aceita kit, ignora creme, guarda descobertos
+  Object.assign(process.env, ENV, { ESPERA_API_MS: "1" });
+  const { criarServico } = await import("../server/api.mjs");
+  const api = criarServico();
+  await new Promise((ok2) => api.listen(0, "127.0.0.1", ok2));
+  const URL_API = `http://127.0.0.1:${api.address().port}`;
+  const resp = await (await fetch(`${URL_API}/buscar?q=asad`)).json();
+  assert.equal((await fetch(`${URL_API}/buscar?q=ab`)).status, 400);
+  api.close();
+  assert.equal(resp.produtos.length, 2, JSON.stringify(resp));
+  for (const p of resp.produtos) assert.deepEqual(Object.keys(p).sort(), ["a", "i", "n", "p", "r"]);
+  assert.ok(resp.produtos.some((p) => p.n.startsWith("Kit Asad") && p.r === "1-555"));
+  assert.ok(!JSON.stringify(resp).match(/Loja|US\$|usd|margem/i));
+  assert.equal(ler("descobertos.json")[0].id, "9005");
+  passo("busca sob demanda (só n/i/p/r/a; kit entra, creme não; guarda o achado)");
+
+  // coleta seguinte junta os descobertos ao catálogo
+  grava("estado.json", { varredura: { "loja-alfa": HOJE, "loja-beta": HOJE }, novos: HOJE });
+  r = await rodar("scrape.mjs");
+  assert.equal(r.status, 0, r.out);
+  assert.ok(ler("bruto.json").produtos.some((p) => p.id === "9005"));
+  assert.ok(!existsSync(arq("descobertos.json")));
+  passo("coleta incorpora os perfumes achados pela busca");
+
+  // 5. criptografia ida e volta
+  const original = readFileSync(arq("bruto.json"));
+  r = await rodar("cripto.mjs", ["cifrar"]);
+  assert.equal(r.status, 0, r.out);
+  const enc = readFileSync(arq("bruto.enc"));
+  assert.ok(!enc.includes("Loja Alfa") && !enc.includes("Marca X") && !enc.includes("111"), "cifrado não tem texto puro");
+  assert.ok(existsSync(arq("lojas.enc")) && existsSync(arq("estado.enc")));
+  rmSync(arq("bruto.json"));
+  r = await rodar("cripto.mjs", ["decifrar"]);
+  assert.ok(readFileSync(arq("bruto.json")).equals(original), "ida e volta igual");
+  r = await rodar("cripto.mjs", ["cifrar"]);
+  assert.match(r.out, /bruto: sem mudança/);
+  r = await rodar("cripto.mjs", ["decifrar"], { DADOS_CHAVE: randomBytes(32).toString("hex") });
+  assert.notEqual(r.status, 0, "chave errada não decifra");
+  passo("criptografia AES-256-GCM (ida e volta, chave errada falha, sem regravar sem mudança)");
+
+  // 6. data.json público: preço final, referência, data; sem US$, lojas ou margem
+  r = await rodar("publicar.mjs", [], { SAIDA: arq("data.json") });
+  assert.equal(r.status, 0, r.out);
+  const txt = readFileSync(arq("data.json"), "utf8"), pub = JSON.parse(txt);
+  const x = pub.produtos.find((p) => p.n.startsWith("Marca X"));
+  assert.equal(x.p, Math.ceil(18.5 * 5.65 * 1.05 * 1.35), "p = ceil(usd × cotação × 1,05 × 1,35)");
+  assert.equal(x.r, "0-111,1-222");
+  assert.equal(x.a, HOJE);
+  assert.deepEqual(Object.keys(pub).sort(), ["atualizadoEm", "produtos"]);
+  for (const p of pub.produtos) assert.deepEqual(Object.keys(p).sort(), ["a", "i", "n", "p", "r"]);
+  for (const proibido of ["US$", "usd", "Loja Alfa", "Loja Beta", "margem", "0.35", "cotacao"]) assert.ok(!txt.includes(proibido), `data.json contém "${proibido}"`);
+  passo(`data.json público (p=${x.p}, r=${x.r}; sem US$, lojas, margem ou cotação)`);
+
+  console.log(`\nTESTE OK (${ok} verificações)`);
+} finally {
+  server.close();
+  rmSync(dir, { recursive: true, force: true });
+}
+process.exit(0);

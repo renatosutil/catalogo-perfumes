@@ -1,6 +1,6 @@
 name: Atualizar catálogo
 
-# A coleta de preços roda na VPS (o ComprasParaguai bloqueia os servidores do GitHub).
+# A coleta de preços roda na VPS.
 # A VPS envia site/data.json para cá e este workflow só republica o site.
 on:
   workflow_dispatch:            # botão "Run workflow" para republicar na hora
