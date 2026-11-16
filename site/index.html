@@ -127,7 +127,11 @@ const precoCard=p=>p.stale?'<div class="price" style="font-size:16px">Consultar 
 function setQty(n,q){if(q<=0)delete cart[n];else cart[n]=q;save();render();updateBar();if($("dlg").open)renderLines()}
 
 // busca ampliada: o que não está no catálogo é procurado pelo serviço de busca
-const BUSCADOS={};let buscaT=null,buscando=0,indisponivel=false;
+const BUSCADOS={},ACHADOS={};let buscaT=null,buscando=0,indisponivel=false;
+// busca por palavras: ignora acentos, maiúsculas, ordem e palavras genéricas
+const norm=s=>String(s).normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
+const GENERICAS=new Set(["perfume","perfumes","de","do","da","e","o","a"]);
+const palavras=q=>norm(q).split(/[^a-z0-9]+/).filter(t=>t&&!GENERICAS.has(t));
 function buscarMais(){
   clearTimeout(buscaT);
   const q=$("q").value.trim(),k=q.toLowerCase();
@@ -139,6 +143,7 @@ function buscarMais(){
       const j=await r.json();
       if(!r.ok||j.indisponivel){indisponivel=true;delete BUSCADOS[k]}
       if(j.parcial)delete BUSCADOS[k];
+      ACHADOS[k]=new Set([...(ACHADOS[k]||[]),...(j.produtos||[]).map(p=>p.n)]);
       const ja=new Set(DB.produtos.map(p=>p.n));let novos=0;
       for(const p of j.produtos||[])if(!ja.has(p.n)){DB.produtos.push(p);EXTRA[p.n]=p;novos++}
       if(novos){save();build()}
@@ -148,7 +153,8 @@ function buscarMais(){
 }
 function render(){
   const q=$("q").value.trim().toLowerCase(),g=$("gen").value,b=$("brand").value,s=$("sort").value;
-  let L=P.filter(p=>(!g||p.gender===g)&&(!b||p.brand===b)&&(!q||p.full.toLowerCase().includes(q)));
+  const toks=palavras(q),achados=ACHADOS[q];
+  let L=P.filter(p=>(!g||p.gender===g)&&(!b||p.brand===b)&&(!q||(achados&&achados.has(p.full))||toks.every(t=>norm(p.full).includes(t))));
   if(s==="asc")L.sort((a,b)=>a.price-b.price);else if(s==="desc")L.sort((a,b)=>b.price-a.price);else if(s==="az")L.sort((a,b)=>a.full.localeCompare(b.full));
   const dt=DB.atualizadoEm?new Date(DB.atualizadoEm).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"}):"";
   $("count").textContent=L.length+" perfumes"+(L.length>LIMIT?" (mostrando "+LIMIT+")":"")+(buscando?" · buscando mais perfumes…":"")+(q&&indisponivel&&!buscando?" · busca ampliada indisponível no momento":"")+(dt&&!q?" · preços atualizados em "+dt:"");
