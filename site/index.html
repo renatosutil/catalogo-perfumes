@@ -89,7 +89,7 @@ const brl=v=>v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const hue=s=>{let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))%360;return h};
-let LIMIT=60,CFG={whatsapp:"",margem:0.15,cotacao:null,mostrarFotos:true},DB={},P=[],COT=5.65;
+let LIMIT=60,CFG={whatsapp:"",acrescimoCotacao:0,margem:0.15,cotacao:null,mostrarFotos:true},DB={},P=[],COT=5.65;
 const cart={};
 try{Object.assign(cart,JSON.parse(localStorage.getItem("cartN")||"{}"))}catch(e){}
 const save=()=>{try{localStorage.setItem("cartN",JSON.stringify(cart))}catch(e){}};
@@ -101,7 +101,8 @@ function pic(p){
   return `<div class="pic"><img loading="lazy" referrerpolicy="no-referrer" src="${esc(p.img)}" alt="${esc(p.full)}" onerror="this.parentNode.outerHTML=this.dataset.fb" data-fb="${esc(fb)}"></div>`;
 }
 function build(){
-  COT=CFG.cotacao||DB.cotacao||5.65;
+  // preço = US$ × (cotação × (1 + acrescimoCotacao)) × (1 + margem)
+  COT=(CFG.cotacao||DB.cotacao||5.65)*(1+(Number(CFG.acrescimoCotacao)||0));
   P=DB.produtos.map((d,i)=>{
     const brand=BRANDS.find(b=>d.n.startsWith(b))||d.n.split(" ")[0];
     const gender=/Masculino/.test(d.n)?"Masculino":/Feminino/.test(d.n)?"Feminino":"Unissex";

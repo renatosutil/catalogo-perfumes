@@ -1,6 +1,7 @@
 {
   "whatsapp": "5541996182105",
-  "margem": 0.15,
+  "acrescimoCotacao": 0.05,
+  "margem": 0.35,
   "cotacao": null,
   "mostrarFotos": true,
   "titulo": "Perfumes importados — monte seu orçamento"

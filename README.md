@@ -19,7 +19,7 @@ O cliente monta o orçamento e envia pelo WhatsApp, com a loja mais barata e o c
 
 | O que | Onde |
 |---|---|
-| WhatsApp, margem, cotação fixa, fotos, título | `site/config.json` |
+| WhatsApp, acréscimo na cotação, margem, cotação fixa, fotos, título | `site/config.json`. Preço de venda = US$ × (cotação × (1 + `acrescimoCotacao`)) × (1 + `margem`); hoje 5% e 35% |
 | Adicionar/remover lojas e **ordem de prioridade** | `scraper/lojas.json` (o `nome` deve ser igual ao nome da loja no ComprasParaguai). O preço mostrado é o da primeira loja da lista que tiver o perfume (hoje: Mega, Macedonia, Nissei, Cellshop, Madrid Center), mesmo que outra seja mais barata |
 | Quantos perfumes entram | `scraper/modo.json`: `{"modo":"top","quantidade":200}` (os 200 mais procurados) ou `{"modo":"todos"}` (todos os perfumes das lojas; leva bem mais tempo, veja abaixo) |
 | Frequência | linha `cron` em `.github/workflows/atualizar.yml` |
