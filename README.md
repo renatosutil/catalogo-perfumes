@@ -38,3 +38,11 @@ O cliente monta o orçamento e envia pelo WhatsApp, com a loja mais barata e o c
 2. Em `.github/workflows/atualizar.yml` troque a frequência `"17 */6 * * *"` por `"17 5 * * *"` (uma vez por dia):
    a coleta completa lê milhares de páginas e leva de 30 min a poucas horas.
 3. Rode **Actions > Atualizar catálogo > Run workflow**. O site mostra 60 perfumes por vez, com o botão "Mostrar mais".
+
+## Onde a coleta roda (desde 16/11/2026)
+
+O ComprasParaguai bloqueia os servidores do GitHub e da AWS (erro 403). Por isso a coleta roda na VPS,
+em `~/catalogo-perfumes`, pelo Cloudflare WARP (container `catalogo-warp`, proxy só para o coletor).
+O cron do usuário `ubuntu` roda `~/catalogo-perfumes/coletar.sh` a cada 6 horas; se os preços mudarem, ele envia
+`site/data.json` para este repositório (chave de deploy só deste repositório) e o GitHub republica o site.
+Log: `~/catalogo-perfumes/coleta.log`.
