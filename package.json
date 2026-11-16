@@ -1,0 +1,13 @@
+{
+  "name": "catalogo-perfumes-paraguai",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "atualizar": "node scraper/scrape.mjs",
+    "testar": "node scraper/teste.mjs"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0"
+  }
+}

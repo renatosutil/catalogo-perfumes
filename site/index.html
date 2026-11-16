@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catálogo de Perfumes — Orçamento</title>
+<style>
+:root{--bg:#faf7f2;--card:#fff;--ink:#241f1a;--mute:#7a7066;--line:#e8e0d4;--acc:#7b3f2a;--acc2:#a9643f;--ok:#1f7a4d}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--acc);color:#fff;padding:18px 16px 14px;position:sticky;top:0;z-index:5}
+header h1{margin:0;font-size:19px;font-weight:650}
+header p{margin:2px 0 10px;font-size:13px;opacity:.85}
+.tools{display:flex;gap:8px;flex-wrap:wrap}
+.tools input,.tools select{padding:9px 10px;border-radius:8px;border:0;font-size:14px;background:#fff;color:var(--ink)}
+.tools input{flex:1 1 180px;min-width:0}
+main{max-width:1100px;margin:0 auto;padding:14px 12px 120px}
+.count{font-size:13px;color:var(--mute);margin:4px 2px 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px}
+.pic{height:110px;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}
+.pic img{max-width:100%;max-height:100%;object-fit:contain}
+.brand{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+.name{font-size:14px;font-weight:600;line-height:1.3;flex:1}
+.tags{font-size:12px;color:var(--mute)}
+.price{font-size:19px;font-weight:700;color:var(--acc)}
+.card button,.btn{border:0;border-radius:8px;padding:10px;font-size:14px;font-weight:600;cursor:pointer;background:var(--acc);color:#fff}
+.card button:active,.btn:active{background:var(--acc2)}
+.btn:disabled{opacity:.5;cursor:default}
+.qty{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.qty button{width:34px;height:34px;padding:0;font-size:18px;background:var(--line);color:var(--ink)}
+.qty span{font-weight:700;min-width:24px;text-align:center}
+.bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;z-index:6}
+.bar small{display:block;color:var(--mute);font-size:12px}
+.bar b{font-size:17px}
+dialog{border:0;border-radius:14px;padding:0;width:min(560px,94vw);max-height:90vh}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.dlg{padding:16px;display:flex;flex-direction:column;gap:10px;max-height:90vh;overflow:auto}
+.dlg h2{margin:0;font-size:18px}
+.line{display:flex;justify-content:space-between;gap:10px;align-items:center;border-bottom:1px solid var(--line);padding:8px 0;font-size:14px}
+.line .n{flex:1}
+.line .sub{color:var(--mute);font-size:12px}
+.dlg input,.dlg textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font:inherit}
+.row{display:flex;gap:8px}
+.ghost{background:var(--line)!important;color:var(--ink)!important}
+.total{display:flex;justify-content:space-between;font-size:17px;font-weight:700;padding-top:6px}
+.note{font-size:12px;color:var(--mute);line-height:1.4}
+.empty{text-align:center;color:var(--mute);padding:40px 0}
+a.btn{display:block;text-align:center;text-decoration:none}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="titulo">Perfumes importados — monte seu orçamento</h1>
+  <p>Escolha os perfumes, ajuste as quantidades e envie o pedido pelo WhatsApp.</p>
+  <div class="tools">
+    <input id="q" type="search" placeholder="Buscar perfume ou marca…">
+    <select id="gen"><option value="">Todos</option><option>Masculino</option><option>Feminino</option><option>Unissex</option></select>
+    <select id="brand"><option value="">Todas as marcas</option></select>
+    <select id="sort"><option value="pop">Mais procurados</option><option value="asc">Menor preço</option><option value="desc">Maior preço</option><option value="az">A–Z</option></select>
+  </div>
+</header>
+<main>
+  <div class="count" id="count">Carregando…</div>
+  <div class="grid" id="grid"></div>
+  <div style="text-align:center;margin-top:16px"><button class="btn" id="more" hidden>Mostrar mais</button></div>
+  <p class="note" style="margin-top:22px">Valores de referência em reais, sujeitos a variação de câmbio e disponibilidade. O preço final e o prazo são confirmados por WhatsApp antes da compra.</p>
+</main>
+<div class="bar">
+  <div><small id="items">Nenhum item</small><b id="total">R$ 0,00</b></div>
+  <button class="btn" id="open">Ver orçamento</button>
+</div>
+
+<dialog id="dlg"><div class="dlg">
+  <h2>Seu orçamento</h2>
+  <div id="lines"></div>
+  <div class="total"><span>Total estimado</span><span id="dtotal"></span></div>
+  <input id="cname" placeholder="Seu nome">
+  <textarea id="cnote" rows="2" placeholder="Observações (cidade de entrega, prazo, perfume que não achou, etc.)"></textarea>
+  <div class="row">
+    <button class="btn ghost" id="close" style="flex:1">Continuar escolhendo</button>
+    <a class="btn" id="send" style="flex:1.4;background:var(--ok)" target="_blank" rel="noopener">Enviar pelo WhatsApp</a>
+  </div>
+</div></dialog>
+
+<script>
+const BRANDS=["Al Wataniah","Maison Alhambra","Carolina Herrera","Paco Rabanne","Calvin Klein","Britney Spears","Tommy Hilfiger","French Avenue","Dar El Ward","Jean Paul Gaultier","Christian Dior","Giorgio Armani","Antonio Banderas","Marina de Bourbon","Jacques Bogart","Dolce & Gabbana","Al Haramain","Jimmy Choo","Ferrari","Lancôme","Lattafa","Armaf","Rasasi","Afnan","Karma","Azzaro","Xerjoff","Bidaya","Orientica","Bharara","Animale","MontBlanc","Kenzo","Moschino","Rayhaan","Asdaaf","Zimaya"];
+const brl=v=>v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const hue=s=>{let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))%360;return h};
+let LIMIT=60,CFG={whatsapp:"",margem:0.15,cotacao:null,mostrarFotos:true},DB={},P=[],COT=5.65;
+const cart={};
+try{Object.assign(cart,JSON.parse(localStorage.getItem("cartN")||"{}"))}catch(e){}
+const save=()=>{try{localStorage.setItem("cartN",JSON.stringify(cart))}catch(e){}};
+
+function bottle(b){const h=hue(b);return `<svg width="40" height="62" viewBox="0 0 40 62"><rect x="15" y="2" width="10" height="9" rx="2" fill="hsl(${h} 35% 35%)"/><rect x="12" y="11" width="16" height="5" fill="hsl(${h} 30% 55%)"/><rect x="4" y="16" width="32" height="44" rx="8" fill="hsl(${h} 55% 62%)"/><rect x="9" y="26" width="22" height="18" rx="3" fill="#fff" opacity=".55"/></svg>`}
+function pic(p){
+  const fb=`<div class="pic" style="background:hsl(${hue(p.brand)} 45% 92%)">${bottle(p.brand)}</div>`;
+  if(!(CFG.mostrarFotos&&p.img))return fb;
+  return `<div class="pic"><img loading="lazy" referrerpolicy="no-referrer" src="${esc(p.img)}" alt="${esc(p.full)}" onerror="this.parentNode.outerHTML=this.dataset.fb" data-fb="${esc(fb)}"></div>`;
+}
+function build(){
+  COT=CFG.cotacao||DB.cotacao||5.65;
+  P=DB.produtos.map((d,i)=>{
+    const brand=BRANDS.find(b=>d.n.startsWith(b))||d.n.split(" ")[0];
+    const gender=/Masculino/.test(d.n)?"Masculino":/Feminino/.test(d.n)?"Feminino":"Unissex";
+    const name=d.n.slice(brand.length).trim().replace(/\s*(Eau de Parfum|Eau de Toilette|Extrait de Parfum|Parfum)\s*/i," ").replace(/\s+(Masculino|Feminino|Unissex)\b/,"").replace(/\s*\d+\s*ML\b/i,"").trim();
+    const conc=(d.n.match(/Eau de Parfum|Eau de Toilette|Extrait de Parfum/)||[""])[0];
+    const ml=(d.n.match(/(\d+)ML/)||[,""])[1];
+    const offers=d.o.slice().sort((x,y)=>x[0]-y[0]); // prioridade = ordem das lojas (a primeira que tiver o perfume)
+    return {id:i,brand,gender,name,conc,ml,full:d.n,img:d.i,offers,price:Math.ceil(offers[0][1]*COT*(1+CFG.margem))};
+  });
+  const sel=$("brand");sel.length=1;
+  [...new Set(P.map(p=>p.brand))].sort().forEach(b=>{const o=document.createElement("option");o.textContent=b;sel.appendChild(o)});
+  Object.keys(cart).forEach(k=>{if(!P.find(p=>p.full===k))delete cart[k]});
+}
+const byName=n=>P.find(p=>p.full===n);
+function setQty(n,q){if(q<=0)delete cart[n];else cart[n]=q;save();render();updateBar();if($("dlg").open)renderLines()}
+function render(){
+  const q=$("q").value.trim().toLowerCase(),g=$("gen").value,b=$("brand").value,s=$("sort").value;
+  let L=P.filter(p=>(!g||p.gender===g)&&(!b||p.brand===b)&&(!q||p.full.toLowerCase().includes(q)));
+  if(s==="asc")L.sort((a,b)=>a.price-b.price);else if(s==="desc")L.sort((a,b)=>b.price-a.price);else if(s==="az")L.sort((a,b)=>a.full.localeCompare(b.full));
+  const dt=DB.atualizadoEm?new Date(DB.atualizadoEm).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"}):"";
+  $("count").textContent=L.length+" perfumes"+(L.length>LIMIT?" (mostrando "+LIMIT+")":"")+(dt?" · preços atualizados em "+dt:"");
+  $("more").hidden=L.length<=LIMIT;
+  $("grid").innerHTML=L.length?L.slice(0,LIMIT).map(p=>{const k=esc(p.full).replace(/'/g,"&#39;");return `<div class="card">${pic(p)}<div class="brand">${esc(p.brand)}</div><div class="name">${esc(p.name)}</div><div class="tags">${p.gender}${p.conc?" · "+p.conc:""}${p.ml?" · "+p.ml+" ml":""}</div><div class="price">${brl(p.price)}</div>${cart[p.full]?`<div class="qty"><button data-n="${k}" data-d="-1">−</button><span>${cart[p.full]}</span><button data-n="${k}" data-d="1">+</button></div>`:`<button data-n="${k}" data-d="1">Adicionar</button>`}</div>`}).join(""):'<div class="empty">Nenhum perfume encontrado.</div>';
+}
+function totals(){let n=0,t=0;for(const k in cart){const p=byName(k);if(!p)continue;n+=cart[k];t+=cart[k]*p.price}return{n,t}}
+function updateBar(){const{n,t}=totals();$("items").textContent=n?n+(n>1?" itens":" item"):"Nenhum item";$("total").textContent=brl(t)}
+function renderLines(){
+  const ks=Object.keys(cart);
+  $("lines").innerHTML=ks.length?ks.map(k=>{const p=byName(k),e=esc(k).replace(/'/g,"&#39;");return `<div class="line"><div class="n">${esc(p.brand+" "+p.name)}<div class="sub">${p.ml?p.ml+" ml · ":""}${brl(p.price)} cada</div></div><div class="qty"><button class="btn ghost" style="width:32px;height:32px;padding:0" data-n="${e}" data-d="-1">−</button><span>${cart[k]}</span><button class="btn ghost" style="width:32px;height:32px;padding:0" data-n="${e}" data-d="1">+</button></div></div>`}).join(""):'<div class="empty">Seu orçamento está vazio.</div>';
+  $("dtotal").textContent=brl(totals().t);
+  refreshLink();
+}
+function message(){
+  const ks=Object.keys(cart),name=$("cname").value.trim(),note=$("cnote").value.trim(),L=DB.lojas||[];
+  let m="Olá! Gostaria de um orçamento"+(name?" ("+name+")":"")+":\n\n";
+  ks.forEach((k,i)=>{const p=byName(k),o=p.offers[0];
+    m+=`${i+1}) ${p.brand} ${p.name}${p.ml?" "+p.ml+"ml":""} (${p.gender}) — ${cart[k]}x ${brl(p.price)} = ${brl(cart[k]*p.price)}\n   Loja: ${L[o[0]]} (US$ ${o[1].toFixed(2)}) cód. ${o[2]}${p.offers.length>1?" | outras: "+p.offers.slice(1).map(x=>L[x[0]]+" US$ "+x[1].toFixed(2)).join(", "):""}\n`});
+  m+=`\nTotal estimado: ${brl(totals().t)}`;
+  if(note)m+="\nObs.: "+note;
+  return m;
+}
+function refreshLink(){
+  const a=$("send"),ok=Object.keys(cart).length>0&&/^\d{10,15}$/.test(CFG.whatsapp||"")&&CFG.whatsapp!=="5500000000000";
+  a.href=ok?"https://wa.me/"+CFG.whatsapp+"?text="+encodeURIComponent(message()):"#";
+  a.style.opacity=Object.keys(cart).length?1:.5;
+  a.onclick=e=>{if(!ok){e.preventDefault();alert(Object.keys(cart).length?"WhatsApp do vendedor ainda não configurado.":"Adicione ao menos um perfume.")}};
+}
+document.addEventListener("click",e=>{const b=e.target.closest("button[data-n]");if(!b)return;const n=b.dataset.n;setQty(n,(cart[n]||0)+Number(b.dataset.d))});
+["q","gen","brand","sort"].forEach(id=>$(id).addEventListener("input",()=>{LIMIT=60;render()}));
+$("more").onclick=()=>{LIMIT+=60;render()};
+["cname","cnote"].forEach(id=>$(id).addEventListener("input",refreshLink));
+$("open").onclick=()=>{renderLines();$("dlg").showModal()};
+$("close").onclick=()=>$("dlg").close();
+(async()=>{
+  try{
+    const bust="?t="+Math.floor(Date.now()/60000);
+    const [c,d]=await Promise.all([fetch("config.json"+bust).then(r=>r.json()).catch(()=>({})),fetch("data.json"+bust).then(r=>r.json())]);
+    CFG={...CFG,...c};DB=d;
+    if(CFG.titulo)$("titulo").textContent=CFG.titulo;
+    build();render();updateBar();
+  }catch(e){$("count").textContent="Não foi possível carregar o catálogo. Tente novamente em instantes."}
+})();
+</script>
+</body>
+</html>
