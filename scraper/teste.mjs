@@ -65,6 +65,13 @@ const server = http.createServer((req, res) => {
   }
   if (u.pathname === "/perfume-novo-um_9001/") return fim(`<body>${oferta("Loja Alfa", "25,00", "333")}${oferta("Outra Loja", "5,00", "1")}${oferta("Loja Beta", "27,00", "444")}</body>`);
   if (u.pathname === "/kit-perfume-asad-duo_9005/") return fim(`<body>${oferta("Loja Beta", "30,00", "555")}</body>`);
+  if (u.pathname === "/perfume_5001/") return fim(`<body><div class="ficha-olfativa-lead">O Marca X é um perfume âmbar, no Compras Paraguai.</div>
+<ul class="ficha-olfativa-badges"><li><span class="ficha-olfativa-badge-rotulo">Público</span> Masculino</li><li><span class="ficha-olfativa-badge-rotulo">Lançamento</span> 2021</li></ul>
+<ul class="ficha-olfativa-acordes"><li><span class="ficha-olfativa-acorde"><span class="ficha-olfativa-acorde-nome">Âmbar</span></span></li></ul>
+<ul class="ficha-olfativa-piramide"><li class="ficha-olfativa-piramide-top"><ul class="ficha-olfativa-notas"><li>Pimenta</li><li>Abacaxi</li></ul></li>
+<li class="ficha-olfativa-piramide-heart"><ul class="ficha-olfativa-notas"><li>Café</li></ul></li><li class="ficha-olfativa-piramide-base"><ul class="ficha-olfativa-notas"><li>Baunilha</li></ul></li></ul>
+<section class="ficha-olfativa-card"><h3>Quando usar</h3><ul><li><span style="width: 90%"></span>Inverno</li><li><span style="width: 20%"></span>Verão</li></ul></section>
+<div class="ficha-olfativa-rodape"><ul class="ficha-olfativa-badges"><li><span class="ficha-olfativa-badge-rotulo">Duração</span> Longa Duração</li><li><span class="ficha-olfativa-badge-rotulo">Rastro</span> Forte</li></ul></div></body>`);
   res.statusCode = 404;
   fim("não");
 });
@@ -161,6 +168,16 @@ try {
   const URL_API = `http://127.0.0.1:${api.address().port}`;
   const resp = await (await fetch(`${URL_API}/buscar?q=asad`)).json();
   assert.equal((await fetch(`${URL_API}/buscar?q=ab`)).status, 400);
+  // ficha olfativa: pela referência; 2º clique vem do cache; kit em oferta solta não tem ficha
+  pedidos.length = 0;
+  const f1 = (await (await fetch(`${URL_API}/ficha?r=0-111,1-222`)).json()).ficha;
+  assert.deepEqual([f1.descricao, f1.publico, f1.lancamento, f1.topo, f1.coracao, f1.fundo, f1.duracao, f1.rastro, f1.usar, f1.acordes],
+    ["O Marca X é um perfume âmbar", "Masculino", "2021", ["Pimenta", "Abacaxi"], ["Café"], ["Baunilha"], "Longa Duração", "Forte", ["Inverno"], ["Âmbar"]]);
+  assert.deepEqual(pedidos, ["/perfume_5001/"], "1 pedido pela página do modelo");
+  await fetch(`${URL_API}/ficha?r=0-111`);
+  assert.equal(pedidos.length, 1, "2º clique vem do cache");
+  assert.equal((await (await fetch(`${URL_API}/ficha?r=0-777`)).json()).ficha, null, "kit sem ficha");
+  passo("ficha olfativa (descrição sem citar a fonte, notas, duração; cache; kit sem ficha)");
   api.close();
   assert.equal(resp.produtos.length, 3, JSON.stringify(resp));
   for (const p of resp.produtos) assert.deepEqual(Object.keys(p).sort(), ["a", "i", "n", "p", "r"]);

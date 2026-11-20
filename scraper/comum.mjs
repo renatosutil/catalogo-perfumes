@@ -182,6 +182,42 @@ export function lerOfertas(html) {
   return ofertas;
 }
 
+// ficha olfativa da página do modelo (descrição, notas, duração...). null se a página não tiver ficha.
+export function lerFicha(html) {
+  const $ = cheerio.load(html);
+  const txt = (el) => $(el).text().replace(/\s+/g, " ").trim();
+  const lead = txt($(".ficha-olfativa-lead").first());
+  if (!lead && !$(".ficha-olfativa-piramide").length) return null;
+  const badge = (rotulo) => {
+    let v = "";
+    $(".ficha-olfativa-badges li").each((_, li) => {
+      const r = txt($(li).find(".ficha-olfativa-badge-rotulo"));
+      if (r.toLowerCase() === rotulo.toLowerCase()) v = txt(li).slice(r.length).trim();
+    });
+    return v;
+  };
+  const notas = (cls) => $(`.ficha-olfativa-piramide-${cls}`).first().find(".ficha-olfativa-notas li").map((_, li) => txt(li)).get();
+  // "Quando usar": itens com barra; entram os de barra >= 50%
+  const usar = [];
+  $("section.ficha-olfativa-card").each((_, sec) => {
+    if (!/quando usar/i.test(txt($(sec).find("h3")))) return;
+    $(sec).find("li").each((_, li) => {
+      const w = Number((/width:\s*(\d+(?:\.\d+)?)%/.exec($.html(li)) || [])[1]);
+      const nome = txt(li);
+      if (nome && (!Number.isFinite(w) || w >= 50)) usar.push(nome);
+    });
+  });
+  const limpa = (s) => s.replace(/[\s,;–-]*(no |do |pelo |em )?compras ?paraguai\S*/gi, "").trim();
+  return {
+    descricao: limpa(lead),
+    publico: badge("Público"), lancamento: badge("Lançamento"), concentracao: badge("Concentração"),
+    acordes: $(".ficha-olfativa-acorde-nome").map((_, e) => txt(e)).get().slice(0, 6),
+    topo: notas("top"), coracao: notas("heart"), fundo: notas("base"),
+    duracao: badge("Duração"), rastro: badge("Rastro"),
+    usar: [...new Set(usar)].slice(0, 8),
+  };
+}
+
 export function lerCotacao(html) {
   const txt = cheerio.load(html)("body").text().replace(/\s+/g, " ");
   const m = /Cota[çc][ãa]o do D[óo]lar\s*R\$\s*([\d.,]+)/i.exec(txt);

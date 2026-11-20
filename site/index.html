@@ -53,6 +53,13 @@ a.btn{display:block;text-align:center;text-decoration:none}
 #fotoImg{width:100%;max-height:78vh;object-fit:contain}
 #fotoX{position:absolute;top:8px;right:8px;width:38px;height:38px;padding:0;font-size:18px;z-index:1}
 #fotoNome{font-size:14px;font-weight:600;text-align:center}
+#foto .fotoBox{max-height:92vh;overflow:auto}
+#fotoImg{max-height:58vh}
+#fotoFicha{width:100%;font-size:13px;line-height:1.45;color:var(--ink)}
+#fotoFicha .fdesc{margin:2px 0 8px}
+#fotoFicha .ftags{color:var(--mute);margin-bottom:6px}
+#fotoFicha .frow{margin:3px 0}
+#fotoFicha .frow b{color:var(--acc)}
 </style>
 </head>
 <body>
@@ -94,6 +101,7 @@ a.btn{display:block;text-align:center;text-decoration:none}
   <button class="btn ghost" id="fotoX" aria-label="Fechar">✕</button>
   <img id="fotoImg" referrerpolicy="no-referrer" alt="">
   <div id="fotoNome"></div>
+  <div id="fotoFicha"></div>
 </div></dialog>
 
 <script>
@@ -211,7 +219,31 @@ document.addEventListener("click",e=>{
   const im=e.target.closest(".pic img");if(!im)return;
   const g=$("fotoImg");g.onerror=()=>{g.onerror=null;g.src=im.src};
   g.src=im.dataset.g||im.src;g.alt=im.alt;$("fotoNome").textContent=im.alt;$("foto").showModal();
+  mostrarFicha(byName(im.alt));
 });
+// descrição do perfume (ficha olfativa), buscada no serviço só quando o cliente abre a foto
+const FICHAS={};
+function htmlFicha(f){
+  const lista=(rot,v)=>v&&v.length?`<div class="frow"><b>${rot}:</b> ${esc(v.join(", "))}</div>`:"";
+  const tags=[f.publico,f.lancamento&&"Lançamento "+f.lancamento,f.concentracao,f.duracao,f.rastro&&"Rastro "+f.rastro.toLowerCase()].filter(Boolean);
+  return (f.descricao?`<p class="fdesc">${esc(f.descricao)}</p>`:"")+(tags.length?`<div class="ftags">${esc(tags.join(" · "))}</div>`:"")
+    +lista("Acordes",f.acordes)+lista("Notas de topo",f.topo)+lista("Notas de coração",f.coracao)+lista("Notas de fundo",f.fundo)+lista("Ideal para",f.usar);
+}
+async function mostrarFicha(p){
+  const box=$("fotoFicha");box.innerHTML="";
+  if(!p||!CFG.api)return;
+  const k=p.full;
+  if(!(k in FICHAS)){
+    box.innerHTML='<div class="ftags">Carregando descrição…</div>';
+    try{
+      const r=await fetch(CFG.api.replace(/\/$/,"")+"/ficha?r="+encodeURIComponent(p.ref||"")+"&n="+encodeURIComponent(k));
+      const j=await r.json();
+      if(r.ok&&!j.indisponivel)FICHAS[k]=j.ficha||null;else{box.innerHTML="";return}
+    }catch(e){box.innerHTML="";return}
+  }
+  if($("fotoNome").textContent!==k)return; // o cliente já abriu outra foto
+  box.innerHTML=FICHAS[k]?htmlFicha(FICHAS[k]):"";
+}
 $("fotoX").onclick=()=>$("foto").close();
 $("foto").addEventListener("click",e=>{if(e.target.id==="foto")$("foto").close()});
 (async()=>{
