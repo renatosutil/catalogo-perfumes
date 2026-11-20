@@ -149,16 +149,18 @@ export function ehCreme(nome) {
   return /\b(lo[çc][ãa]o|lotion|creme|cream|hidratante|body butter|manteiga corporal)\b/i.test(n)
     && !/\b(dental|dente|barbear|cabelo|capilar|shampoo|condicionador|pentear)\b/i.test(n);
 }
+// hair mist (perfume para cabelo)
+export const ehHairMist = (nome) => /\b(hair\s*mist|hair\s*perfume|perfume\s+(para|de|capilar)\s*(o\s+)?cabelos?|perfume capilar|bruma capilar)\b/i.test(String(nome || ""));
 // tipos de modelo de cuidado corporal aceitos (além de perfume)
-export const ehModeloCorpo = (href) => /^\/?(locao-corporal|creme-corporal|creme-hidratante|hidratante-corporal|body-splash|body-mist)-/i.test(href || "");
+export const ehModeloCorpo = (href) => /^\/?(locao-corporal|creme-corporal|creme-hidratante|hidratante-corporal|body-splash|body-mist|hair-mist|bruma-capilar)-/i.test(href || "");
 // itens que nunca entram (mesmo citando perfume)
-const FORA = /\b(sabonete|desodorante|aromatizador|aromatizante|air freshener|difusor|vela|hair mist|shampoo|condicionador|gel de banho|creme dental)\b/i;
+const FORA = /\b(sabonete|desodorante|aromatizador|aromatizante|air freshener|difusor|vela|shampoo|condicionador|gel de banho|creme dental)\b/i;
 // nome de oferta solta que é perfume, kit, body splash ou creme/loção corporal
 export function ofertaPerfume(nome) {
   const n = String(nome || "");
   if (/\bkit\b/i.test(n)) return /\b(perfumes?|edp|edt|eau|parfum|\d+\s*ml)\b/i.test(n);
   if (FORA.test(n)) return false;
-  if (ehSplash(n) || ehCreme(n)) return true;
+  if (ehSplash(n) || ehCreme(n) || ehHairMist(n)) return true;
   if (/\bbody\b/i.test(n)) return false;
   return /\b(perfume|edp|edt|eau de (parfum|toilette)|extrait|parfum)\b/i.test(n);
 }

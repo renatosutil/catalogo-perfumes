@@ -51,6 +51,7 @@ const server = http.createServer((req, res) => {
         + solta("/kit-asad-trio-100ml__7001/", "Loja Alfa", "40,00", "777", "Kit Perfume Asad Trio Edp 100ML")
         + solta("/creme-asad__7002/", "Loja Alfa", "9,00", "778", "Creme Hidratante Asad 200g")
         + solta("/asad-air-freshener__7004/", "Loja Alfa", "4,00", "782", "Lattafa Asad Air Freshener 300ML")
+        + solta("/asad-hair-mist__7005/", "Loja Alfa", "8,00", "783", "Lattafa Asad Hair Mist 50ML")
         + solta("/kit-asad-outra__7003/", "Outra Loja", "30,00", "779", "Kit Perfume Asad Outra Edp")));
     }
     if (!loja && q === "love spell") {
@@ -195,7 +196,8 @@ try {
   assert.ok(bs.some((p) => p.n === "Loção Corporal Victoria's Secret Amber Romance 236ML" && p.r === "0-903"), "loção entra com o próprio nome");
   passo("body splash e loção (nome certo para cada um)");
   api.close();
-  assert.equal(resp.produtos.length, 5, JSON.stringify(resp));
+  assert.equal(resp.produtos.length, 6, JSON.stringify(resp));
+  assert.ok(resp.produtos.some((p) => p.n === "Lattafa Asad Hair Mist 50ML" && p.r === "0-783"), "hair mist entra");
   for (const p of resp.produtos) assert.deepEqual(Object.keys(p).sort(), ["a", "i", "n", "p", "r"]);
   assert.ok(resp.produtos.some((p) => p.n.startsWith("Kit Asad") && p.r === "1-555"));
   assert.ok(resp.produtos.some((p) => p.n === "Kit Perfume Asad Trio Edp 100ML" && p.r === "0-777"), "kit em oferta solta entra");
@@ -203,8 +205,8 @@ try {
   assert.ok(resp.produtos.some((p) => p.n === "Creme Hidratante Asad 200g" && p.r === "0-778"), "creme (oferta solta) entra");
   assert.ok(!resp.produtos.some((p) => /Air Freshener|Outra/.test(p.n)), "aromatizador e loja de fora ficam de fora");
   assert.ok(!JSON.stringify(resp).match(/Loja|US\$|usd|margem/i));
-  assert.deepEqual(ler("descobertos.json").map((p) => p.id).sort(), ["9005", "9006", "9100", "9101", "o7001", "o7002", "o7101"]);
-  passo("busca sob demanda (só n/i/p/r/a; kit e creme entram, aromatizador não; guarda o achado)");
+  assert.deepEqual(ler("descobertos.json").map((p) => p.id).sort(), ["9005", "9006", "9100", "9101", "o7001", "o7002", "o7005", "o7101"]);
+  passo("busca sob demanda (só n/i/p/r/a; kit, creme e hair mist entram; aromatizador não; guarda o achado)");
 
   // coleta seguinte junta os descobertos ao catálogo
   grava("estado.json", { varredura: { "loja-alfa": HOJE, "loja-beta": HOJE }, novos: HOJE });

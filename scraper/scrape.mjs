@@ -14,7 +14,7 @@ import {
 } from "./comum.mjs";
 import { alertar } from "./alerta.mjs";
 
-const TERMOS_PADRAO = ["perfume masculino", "perfume feminino", "perfume unissex", "body splash", "body mist", "creme corporal", "locao corporal"];
+const TERMOS_PADRAO = ["perfume masculino", "perfume feminino", "perfume unissex", "body splash", "body mist", "creme corporal", "locao corporal", "hair mist"];
 const POR_PAGINA = 20;
 const MAX_NOVOS = Number(process.env.MAX_NOVOS || 150);
 const PAGINAS_NOVOS = Number(process.env.PAGINAS_NOVOS || 10);
