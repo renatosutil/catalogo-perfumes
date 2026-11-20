@@ -33,9 +33,9 @@ não entra no total.
 
 - `npm test` / `npm run testar`: testes com um servidor falso (não acessa a internet).
 - `npm run decifrar` / `npm run cifrar`: abre e fecha os dados (precisa de `DADOS_CHAVE`).
-- `npm run atualizar`: coleta. `npm run publicar`: gera `site/data.json`.
+- `npm run atualizar`: coleta. `npm run publicar`: gera `site/data.json`. `npm run cotacao`: só a cotação do dólar (1 pedido).
 
 ## Na VPS
 
 Pasta `~/catalogo-perfumes`: `repo/` (este repositório), `compose.yaml`, `coletar.sh`, `.env`, `dados/` e
-`coleta.log`. O cron roda `coletar.sh` uma vez por dia; o serviço de busca roda no container `catalogo-api`.
+`coleta.log`. O cron roda `coletar.sh` uma vez por dia e `coletar.sh cotacao` a cada 3 horas; o serviço de busca roda no container `catalogo-api`.

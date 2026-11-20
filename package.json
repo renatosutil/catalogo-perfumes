@@ -10,7 +10,8 @@
     "decifrar": "node scraper/cripto.mjs decifrar",
     "testar": "node scraper/teste.mjs",
     "test": "node scraper/teste.mjs",
-    "api": "node server/api.mjs"
+    "api": "node server/api.mjs",
+    "cotacao": "node scraper/cotacao.mjs"
   },
   "dependencies": {
     "cheerio": "^1.0.0"

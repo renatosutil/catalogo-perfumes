@@ -179,6 +179,21 @@ try {
   assert.ok(!existsSync(arq("descobertos.json")));
   passo("coleta incorpora os perfumes achados pela busca");
 
+  // cotação a cada 3 h: 1 pedido; só republica se mudou; ignora leitura absurda
+  const comCotacao = (c) => { const b2 = ler("bruto.json"); b2.cotacao = c; grava("bruto.json", b2); };
+  const SAIDA_C = { SAIDA: arq("data-cotacao.json") };
+  comCotacao(5.65); pedidos.length = 0;
+  r = await rodar("cotacao.mjs", [], SAIDA_C);
+  assert.match(r.out, /sem mudança/); assert.equal(pedidos.length, 1); assert.ok(!existsSync(arq("data-cotacao.json")));
+  comCotacao(5.5);
+  r = await rodar("cotacao.mjs", [], SAIDA_C);
+  assert.match(r.out, /5\.5 -> R\$ 5\.65/); assert.equal(ler("bruto.json").cotacao, 5.65); assert.ok(existsSync(arq("data-cotacao.json")));
+  comCotacao(8);
+  r = await rodar("cotacao.mjs", [], SAIDA_C);
+  assert.match(r.out, /ignorada/); assert.equal(ler("bruto.json").cotacao, 8);
+  comCotacao(5.65);
+  passo("cotação a cada 3 h (1 pedido; republica só se mudou; ignora leitura absurda)");
+
   // 5. criptografia ida e volta
   const original = readFileSync(arq("bruto.json"));
   r = await rodar("cripto.mjs", ["cifrar"]);
