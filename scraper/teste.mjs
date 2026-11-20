@@ -28,7 +28,7 @@ const modelo = (href, nome) => `
 <div class="promocao-item-nome"><a href="${href}">Perfume ${nome}</a></div></div>`;
 const pagina = (total, corpo) => `<body><h1>(${total} Resultados)</h1>${corpo}</body>`;
 
-let modo = "normal";
+let modo = "normal", modoAlta = false;
 const pedidos = [], alertas = [];
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
@@ -67,12 +67,16 @@ const server = http.createServer((req, res) => {
   }
   if (u.pathname === "/perfume/") {
     const loja = u.searchParams.get("loja");
+    if (!loja && modoAlta && Number(u.searchParams.get("page") || 1) === 1) {
+      return fim(pagina(2, modelo("/perfume-alta-tres_9003/", "Alta Tres Feminino 100ML") + modelo("/perfume-marca-x_5001/", "Marca X Masculino 100ML")));
+    }
     if (loja === "loja-alfa") return fim(pagina(4, modelo("/creme-corporal-y_9004/", "Creme") + modelo("/perfume-marca-x_5001/", "Marca X Masculino 100ML") + modelo("/perfume-novo-um_9001/", "Novo Um Feminino 100ML") + modelo("/perfume-novo-dois_9002/", "Novo Dois 100ML")));
     if (loja === "loja-beta") return fim(pagina(1, modelo("/perfume-novo-dois_9002/", "Novo Dois 100ML")));
     return fim(pagina(0, ""));
   }
   if (u.pathname === "/perfume-novo-um_9001/") return fim(`<body>${oferta("Loja Alfa", "25,00", "333")}${oferta("Outra Loja", "5,00", "1")}${oferta("Loja Beta", "27,00", "444")}</body>`);
   if (u.pathname === "/kit-perfume-asad-duo_9005/") return fim(`<body>${oferta("Loja Beta", "30,00", "555")}</body>`);
+  if (u.pathname === "/perfume-alta-tres_9003/") return fim(`<body>${oferta("Loja Beta", "26,00", "991")}</body>`);
   if (u.pathname === "/creme-corporal-asad_9006/") return fim(`<body>${oferta("Loja Alfa", "11,00", "780", "Creme Corporal Hidratante Lattafa Asad 280g")}</body>`);
   if (u.pathname === "/locao-corporal-vs-love-spell-250ml_9100/") return fim(`<body>${oferta("Loja Alfa", "10,75", "901", "Body Mist Feminino Victoria's Secret Love Spell 250ML")}${oferta("Outra Loja", "12,00", "902", "Victoria's Secret Splash Love Spell")}</body>`);
   if (u.pathname === "/locao-corporal-vs-amber-romance-236ml_9101/") return fim(`<body>${oferta("Loja Alfa", "15,00", "903", "Loção Hidratante Victoria's Secret Amber Romance 236ML")}${oferta("Outra Loja", "14,00", "904", "Loção Corporal VS Amber Romance")}</body>`);
@@ -125,7 +129,7 @@ try {
   assert.ok(!pedidos.some((p) => p.includes("loja=loja-beta")), "loja semanal não vencida não é varrida");
   assert.equal(e.varredura["loja-alfa"], HOJE);
   assert.equal(e.varredura["loja-beta"], "2026-11-18");
-  assert.ok(!pedidos.some((p) => p.startsWith("/perfume/")), "sem busca de novos fora da semana");
+  assert.ok(!pedidos.some((p) => p.startsWith("/perfume/") && p.includes("loja=")), "sem busca de novos fora da semana");
   assert.match(r.out, /Pedidos: \d+ \| [\d.]+ MB/);
   assert.match(r.out, /cobertura do catálogo 1\/1 \(100\.0%\)/);
   passo("agenda por loja (só a loja vencida; imprime pedidos, MB, tempo e cobertura)");
@@ -231,6 +235,23 @@ try {
   comCotacao(5.65);
   passo("cotação a cada 3 h (1 pedido; republica só se mudou; ignora leitura absurda)");
 
+  // em alta: ordem de relevância da fonte; o que não está no catálogo entra; data.json leva a posição (h)
+  modoAlta = true;
+  grava("estado.json", { varredura: { "loja-alfa": HOJE, "loja-beta": HOJE }, novos: HOJE });
+  r = await rodar("scrape.mjs");
+  modoAlta = false;
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /em alta hoje: 2 perfumes \(1 entraram/);
+  const ba = ler("bruto.json");
+  assert.deepEqual(ba.alta.itens.map((x) => x.id), ["9003", "5001"]);
+  assert.deepEqual(ba.produtos.find((p) => p.id === "9003").o, [[1, 26, "991", HOJE]]);
+  r = await rodar("publicar.mjs", [], { SAIDA: arq("data-alta.json") });
+  const pa = JSON.parse(readFileSync(arq("data-alta.json"), "utf8")).produtos;
+  assert.equal(pa.find((p) => p.n.startsWith("Alta Tres")).h, 1);
+  assert.equal(pa.find((p) => p.n.startsWith("Marca X")).h, 2);
+  assert.equal(pa.filter((p) => p.h).length, 2, "só os em alta têm h");
+  passo("em alta do dia (ordem da fonte; novo entra no catálogo; data.json com a posição)");
+
   // 5. criptografia ida e volta
   const original = readFileSync(arq("bruto.json"));
   r = await rodar("cripto.mjs", ["cifrar"]);
@@ -256,7 +277,7 @@ try {
   assert.equal(x.r, "0-111,1-222");
   assert.equal(x.a, HOJE);
   assert.deepEqual(Object.keys(pub).sort(), ["atualizadoEm", "produtos"]);
-  for (const p of pub.produtos) assert.deepEqual(Object.keys(p).sort(), ["a", "i", "n", "p", "r"]);
+  for (const p of pub.produtos) assert.ok(Object.keys(p).every((k) => ["a", "h", "i", "n", "p", "r"].includes(k)) && ["a", "i", "n", "p", "r"].every((k) => k in p), JSON.stringify(p));
   for (const proibido of ["US$", "usd", "Loja Alfa", "Loja Beta", "margem", "0.35", "cotacao"]) assert.ok(!txt.includes(proibido), `data.json contém "${proibido}"`);
   passo(`data.json público (p=${x.p}, r=${x.r}; sem US$, lojas, margem ou cotação)`);
 

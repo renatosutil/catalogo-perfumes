@@ -77,7 +77,7 @@ a.btn{display:block;text-align:center;text-decoration:none}
 <main>
   <div class="count" id="count">Carregando…</div>
   <div class="grid" id="grid"></div>
-  <div style="text-align:center;margin-top:16px"><button class="btn" id="more" hidden>Mostrar mais</button></div>
+  <div style="text-align:center;margin-top:16px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn" id="more" hidden>Mostrar mais</button><button class="btn ghost" id="todos" hidden>Ver todos os produtos</button></div>
   <p class="note" style="margin-top:22px">Valores de referência em reais, sujeitos a variação de câmbio e disponibilidade. O preço final e o prazo são confirmados por WhatsApp antes da compra.</p>
 </main>
 <div class="bar">
@@ -136,7 +136,7 @@ function build(){
     const conc=(d.n.match(/Eau de Parfum|Eau de Toilette|Extrait de Parfum/i)||[""])[0];
     const ml=(d.n.match(/(\d+)\s*ML/i)||[,""])[1];
     const dias=idade(d.a);
-    return {id:i,brand,gender,name,conc,ml,full:d.n,img:d.i,price:d.p,ref:d.r,dias,stale:dias>validade,tipo:tipoDe(d.n)};
+    return {id:i,brand,gender,name,conc,ml,full:d.n,img:d.i,price:d.p,ref:d.r,dias,stale:dias>validade,tipo:tipoDe(d.n),h:d.h||0};
   });
   const sel=$("brand"),atual=sel.value;sel.length=1;
   [...new Set(P.map(p=>p.brand))].sort().forEach(b=>{const o=document.createElement("option");o.textContent=b;sel.appendChild(o)});
@@ -184,11 +184,17 @@ function render(){
   const q=$("q").value.trim().toLowerCase(),g=$("gen").value,b=$("brand").value,s=$("sort").value,t=$("tipo").value;
   const toks=palavras(q),achados=ACHADOS[q];
   let L=P.filter(p=>(!t||p.tipo===t)&&(!g||p.gender===g)&&(!b||p.brand===b)&&(!q||(achados&&achados.has(p.full))||toks.every(t=>norm(p.full).includes(t))));
+  // página inicial (sem busca nem filtro): só os em alta do dia, na ordem de popularidade
+  const temAlta=P.some(p=>p.h),vitrine=!q&&!t&&!g&&!b&&!VER_TODOS&&temAlta;
+  if(vitrine)L=L.filter(p=>p.h).sort((a,b)=>a.h-b.h);
   if(s==="asc")L.sort((a,b)=>a.price-b.price);else if(s==="desc")L.sort((a,b)=>b.price-a.price);else if(s==="az")L.sort((a,b)=>a.full.localeCompare(b.full));
+  const semFiltro=!q&&!t&&!g&&!b;
+  $("todos").hidden=!temAlta||!semFiltro;
+  $("todos").textContent=vitrine?"Ver todos os produtos ("+P.length+")":"Voltar para os em alta hoje";
   const dt=DB.atualizadoEm?new Date(DB.atualizadoEm).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"}):"";
-  $("count").textContent=L.length+" perfumes"+(L.length>LIMIT?" (mostrando "+LIMIT+")":"")+(buscando?" · buscando mais perfumes…":"")+(q&&indisponivel&&!buscando?" · busca ampliada indisponível no momento":"")+(dt&&!q?" · preços atualizados em "+dt:"");
+  $("count").textContent=(vitrine?"🔥 Em alta hoje · "+L.length+" mais procurados":L.length+" produtos")+(L.length>LIMIT?" (mostrando "+LIMIT+")":"")+(buscando?" · buscando mais perfumes…":"")+(q&&indisponivel&&!buscando?" · busca ampliada indisponível no momento":"")+(dt&&!q?" · preços atualizados em "+dt:"");
   $("more").hidden=L.length<=LIMIT;
-  $("grid").innerHTML=L.length?L.slice(0,LIMIT).map(p=>{const k=esc(p.full).replace(/'/g,"&#39;");return `<div class="card">${pic(p)}<div class="brand">${esc(p.brand)}</div><div class="name">${esc(p.name)}</div><div class="tags">${p.gender}${p.conc?" · "+p.conc:""}${p.ml?" · "+p.ml+" ml":""}</div>${precoCard(p)}${cart[p.full]?`<div class="qty"><button data-n="${k}" data-d="-1">−</button><span>${cart[p.full]}</span><button data-n="${k}" data-d="1">+</button></div>`:`<button data-n="${k}" data-d="1">Adicionar</button>`}</div>`}).join(""):`<div class="empty">${buscando?"Procurando…":"Nenhum perfume encontrado.<br>Não achou o que procura? Peça pelo WhatsApp que consultamos para você."}</div>`;
+  $("grid").innerHTML=L.length?L.slice(0,LIMIT).map(p=>{const k=esc(p.full).replace(/'/g,"&#39;");return `<div class="card">${pic(p)}<div class="brand">${esc(p.brand)}</div><div class="name">${esc(p.name)}</div><div class="tags">${p.h?"🔥 Em alta · ":""}${p.gender}${p.conc?" · "+p.conc:""}${p.ml?" · "+p.ml+" ml":""}</div>${precoCard(p)}${cart[p.full]?`<div class="qty"><button data-n="${k}" data-d="-1">−</button><span>${cart[p.full]}</span><button data-n="${k}" data-d="1">+</button></div>`:`<button data-n="${k}" data-d="1">Adicionar</button>`}</div>`}).join(""):`<div class="empty">${buscando?"Procurando…":"Nenhum perfume encontrado.<br>Não achou o que procura? Peça pelo WhatsApp que consultamos para você."}</div>`;
 }
 function totals(){let n=0,t=0,c=0;for(const k in cart){const p=byName(k);if(!p)continue;n+=cart[k];if(p.stale)c++;else t+=cart[k]*p.price}return{n,t,c}}
 function updateBar(){const{n,t}=totals();$("items").textContent=n?n+(n>1?" itens":" item"):"Nenhum item";$("total").textContent=brl(t)}
@@ -219,6 +225,8 @@ function refreshLink(){
 document.addEventListener("click",e=>{const b=e.target.closest("button[data-n]");if(!b)return;const n=b.dataset.n;setQty(n,(cart[n]||0)+Number(b.dataset.d))});
 ["q","tipo","gen","brand","sort"].forEach(id=>$(id).addEventListener("input",()=>{LIMIT=60;render();if(id==="q")buscarMais()}));
 $("more").onclick=()=>{LIMIT+=60;render()};
+let VER_TODOS=false;
+$("todos").onclick=()=>{VER_TODOS=!VER_TODOS;LIMIT=60;render();window.scrollTo({top:0,behavior:"smooth"})};
 ["cname","cnote"].forEach(id=>$(id).addEventListener("input",refreshLink));
 $("open").onclick=()=>{renderLines();$("dlg").showModal()};
 $("close").onclick=()=>$("dlg").close();

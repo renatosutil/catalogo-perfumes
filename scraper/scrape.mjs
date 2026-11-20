@@ -19,6 +19,8 @@ const POR_PAGINA = 20;
 const MAX_NOVOS = Number(process.env.MAX_NOVOS || 150);
 const PAGINAS_NOVOS = Number(process.env.PAGINAS_NOVOS || 10);
 const DIAS_NOVOS = 7;
+const MAX_ALTA = Number(process.env.MAX_ALTA || 40);
+const MAX_ALTA_NOVOS = Number(process.env.MAX_ALTA_NOVOS || 20);
 
 export async function coletar({ cliente = criarCliente(), log = console.log } = {}) {
   const inicio = Date.now();
@@ -56,9 +58,33 @@ export async function coletar({ cliente = criarCliente(), log = console.log } = 
 
   const resumo = [];
   const fila = new Map(estado.fila.map((f) => [f.k, f]));
-  let cotacao = null, novosAdicionados = 0;
+  let cotacao = null, novosAdicionados = 0, alta = null;
   try {
     cotacao = lerCotacao((await cliente.get("/")).html);
+
+    // em alta: ordem de relevância da lista de perfumes da fonte (muda a cada dia)
+    if (!soLojas) {
+      const lista = [];
+      for (let pag = 1; pag <= 3 && lista.length < MAX_ALTA; pag++) {
+        const { itens } = lerModelos((await cliente.get(`/perfume/?page=${pag}`)).html);
+        if (!itens.length) break;
+        for (const m of itens) if (ehPerfume(m.href) && !lista.some((x) => x.id === m.id)) lista.push(m);
+      }
+      let abertos = 0, entraram = 0;
+      for (const m of lista.slice(0, MAX_ALTA)) {
+        if (ids.has(m.id) || nomesConhecidos.has(normalizar(m.nome)) || abertos >= MAX_ALTA_NOVOS) continue;
+        abertos++;
+        const o = ofertasDasLojas(lerOfertas((await cliente.get(m.href)).html), nomes, dia);
+        if (!o.length) continue;
+        bruto.produtos.push({ id: m.id, n: m.nome, i: m.img, o });
+        ids.add(m.id);
+        nomesConhecidos.add(normalizar(m.nome));
+        for (const x of o) { indice.set(`${x[0]}:${x[2]}`, x); fila.delete(`${x[0]}:${x[2]}`); }
+        novosAdicionados++; entraram++;
+      }
+      if (lista.length) alta = { dia, itens: lista.slice(0, MAX_ALTA).map((m) => ({ id: m.id, n: normalizar(m.nome) })) };
+      log(`  em alta hoje: ${lista.length} perfumes (${entraram} entraram no catálogo agora)`);
+    }
 
     for (const loja of varrer) {
       const vistos = new Set();
@@ -145,6 +171,7 @@ export async function coletar({ cliente = criarCliente(), log = console.log } = 
   }
 
   if (cotacao) { bruto.cotacao = cotacao; bruto.cotacaoEm = dia; }
+  if (alta) bruto.alta = alta;
   estado.fila = [...fila.values()].sort((a, b) => (a.t < b.t ? 1 : -1)).slice(0, 30000);
   const s = cliente.stats();
   imprimirResumo(resumo, s, inicio, log);
