@@ -47,6 +47,12 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .note{font-size:12px;color:var(--mute);line-height:1.4}
 .empty{text-align:center;color:var(--mute);padding:40px 0}
 a.btn{display:block;text-align:center;text-decoration:none}
+.pic img{cursor:zoom-in}
+#foto{width:min(720px,96vw)}
+#foto .fotoBox{position:relative;padding:14px;display:flex;flex-direction:column;align-items:center;gap:10px;background:#fff}
+#fotoImg{width:100%;max-height:78vh;object-fit:contain}
+#fotoX{position:absolute;top:8px;right:8px;width:38px;height:38px;padding:0;font-size:18px;z-index:1}
+#fotoNome{font-size:14px;font-weight:600;text-align:center}
 </style>
 </head>
 <body>
@@ -84,6 +90,12 @@ a.btn{display:block;text-align:center;text-decoration:none}
   </div>
 </div></dialog>
 
+<dialog id="foto"><div class="fotoBox">
+  <button class="btn ghost" id="fotoX" aria-label="Fechar">✕</button>
+  <img id="fotoImg" referrerpolicy="no-referrer" alt="">
+  <div id="fotoNome"></div>
+</div></dialog>
+
 <script>
 const BRANDS=["Al Wataniah","Maison Alhambra","Carolina Herrera","Paco Rabanne","Calvin Klein","Britney Spears","Tommy Hilfiger","French Avenue","Dar El Ward","Jean Paul Gaultier","Christian Dior","Giorgio Armani","Antonio Banderas","Marina de Bourbon","Jacques Bogart","Dolce & Gabbana","Al Haramain","Jimmy Choo","Ferrari","Lancôme","Lattafa","Armaf","Rasasi","Afnan","Karma","Azzaro","Xerjoff","Bidaya","Orientica","Bharara","Animale","MontBlanc","Kenzo","Moschino","Rayhaan","Asdaaf","Zimaya"];
 const brl=v=>v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
@@ -104,7 +116,7 @@ function bottle(b){const h=hue(b);return `<svg width="40" height="62" viewBox="0
 function pic(p){
   const fb=`<div class="pic" style="background:hsl(${hue(p.brand)} 45% 92%)">${bottle(p.brand)}</div>`;
   if(!(CFG.mostrarFotos&&p.img))return fb;
-  return `<div class="pic"><img loading="lazy" referrerpolicy="no-referrer" src="${esc(p.img)}" alt="${esc(p.full)}" onerror="this.parentNode.outerHTML=this.dataset.fb" data-fb="${esc(fb)}"></div>`;
+  return `<div class="pic"><img loading="lazy" referrerpolicy="no-referrer" src="${esc(p.img)}" data-g="${esc(fotoGrande(p.img))}" alt="${esc(p.full)}" onerror="this.parentNode.outerHTML=this.dataset.fb" data-fb="${esc(fb)}"></div>`;
 }
 function build(){
   const validade=Number(CFG.diasPrecoValido)||7;
@@ -193,6 +205,15 @@ $("more").onclick=()=>{LIMIT+=60;render()};
 ["cname","cnote"].forEach(id=>$(id).addEventListener("input",refreshLink));
 $("open").onclick=()=>{renderLines();$("dlg").showModal()};
 $("close").onclick=()=>$("dlg").close();
+// foto ampliada: abre a versão original (sem o sufixo _200x200); se falhar, mostra a miniatura
+function fotoGrande(u){return String(u||"").replace(/_\d+x\d+(\.\w+)$/,"$1")}
+document.addEventListener("click",e=>{
+  const im=e.target.closest(".pic img");if(!im)return;
+  const g=$("fotoImg");g.onerror=()=>{g.onerror=null;g.src=im.src};
+  g.src=im.dataset.g||im.src;g.alt=im.alt;$("fotoNome").textContent=im.alt;$("foto").showModal();
+});
+$("fotoX").onclick=()=>$("foto").close();
+$("foto").addEventListener("click",e=>{if(e.target.id==="foto")$("foto").close()});
 (async()=>{
   try{
     const bust="?t="+Math.floor(Date.now()/60000);
