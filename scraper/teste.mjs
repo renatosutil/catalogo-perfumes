@@ -29,9 +29,14 @@ const modelo = (href, nome) => `
 const pagina = (total, corpo) => `<body><h1>(${total} Resultados)</h1>${corpo}</body>`;
 
 let modo = "normal";
-const pedidos = [];
+const pedidos = [], alertas = [];
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
+  if (req.method === "POST" && u.pathname === "/message/sendText/teste") {
+    let corpo = "";
+    req.on("data", (b) => (corpo += b));
+    return req.on("end", () => { alertas.push({ chave: req.headers.apikey, ...JSON.parse(corpo) }); res.end("{}"); });
+  }
   pedidos.push(u.pathname + u.search);
   res.setHeader("content-type", "text/html; charset=utf-8");
   const fim = (html) => res.end(html);
@@ -66,7 +71,8 @@ const dir = mkdtempSync(join(tmpdir(), "catalogo-teste-"));
 const arq = (n) => join(dir, n);
 const ler = (n) => JSON.parse(readFileSync(arq(n), "utf8"));
 const grava = (n, o) => writeFileSync(arq(n), JSON.stringify(o));
-const ENV = { DADOS_DIR: dir, FONTE_URL: FONTE, ESPERA_MS: "1", HOJE, DADOS_CHAVE: CHAVE, MARGEM: "0.35", ACRESCIMO_COTACAO: "0.05", DESCOBERTOS: arq("descobertos.json") };
+const ENV = { DADOS_DIR: dir, FONTE_URL: FONTE, ESPERA_MS: "1", HOJE, DADOS_CHAVE: CHAVE, MARGEM: "0.35", ACRESCIMO_COTACAO: "0.05", DESCOBERTOS: arq("descobertos.json"),
+  EVOLUTION_URL: FONTE, EVOLUTION_INSTANCIA: "teste", EVOLUTION_APIKEY: "chave-teste", ALERTA_NUMERO: "5541000000000" };
 const rodar = (script, args = [], extra = {}) => new Promise((resolve) => {
   const f = spawn(process.execPath, [join(AQUI, script), ...args], { env: { ...process.env, ...ENV, ...extra } });
   let out = "";
@@ -126,6 +132,21 @@ try {
   assert.match(r.out, /::warning::/);
   assert.ok(readFileSync(arq("bruto.json")).equals(antesB) && readFileSync(arq("estado.json")).equals(antesE), "nada gravado");
   passo("429 (::warning::, código 0, dados mantidos)");
+  assert.equal(alertas.length, 1, "um aviso no bloqueio");
+  assert.equal(alertas[0].chave, "chave-teste");
+  assert.equal(alertas[0].number, "5541000000000");
+  assert.ok(alertas[0].text.includes("bloqueou a coleta (HTTP 429"), alertas[0].text);
+  passo("aviso por WhatsApp no bloqueio (apikey, número e texto)");
+
+  // leitura muito abaixo da anterior -> aviso
+  alertas.length = 0;
+  grava("estado.json", { varredura: { "loja-alfa": "2026-11-15", "loja-beta": "2026-11-19" }, novos: "2026-11-19", lidas: { "loja-alfa": 200 } });
+  r = await rodar("scrape.mjs");
+  assert.equal(r.status, 0, r.out);
+  assert.equal(alertas.length, 1, r.out);
+  assert.ok(alertas[0].text.includes("Loja Alfa: só 2 ofertas lidas (na vez anterior: 200)"), alertas[0].text);
+  assert.equal(ler("estado.json").lidas["loja-alfa"], 2);
+  passo("aviso quando a leitura cai para menos da metade (possível mudança no site)");
 
   // 4. serviço de busca: devolve só campos públicos, aceita kit, ignora creme, guarda descobertos
   Object.assign(process.env, ENV, { ESPERA_API_MS: "1" });

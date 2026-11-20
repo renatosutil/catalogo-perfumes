@@ -12,6 +12,7 @@ import {
   caminho, lerJson, gravarJson, lerLojas, hoje, dias, criarCliente, Bloqueio, LimitePedidos,
   lerBusca, lerModelos, lerOfertas, lerCotacao, ofertasDasLojas, normalizar,
 } from "./comum.mjs";
+import { alertar } from "./alerta.mjs";
 
 const TERMOS_PADRAO = ["perfume masculino", "perfume feminino", "perfume unissex"];
 const POR_PAGINA = 20;
@@ -29,6 +30,8 @@ export async function coletar({ cliente = criarCliente(), log = console.log } = 
   const estado = lerJson(caminho("estado.json"), {});
   estado.varredura ||= {};
   estado.fila ||= [];
+  estado.lidas ||= {};
+  const avisos = [];
   const soLojas = process.env.SO_LOJAS ? process.env.SO_LOJAS.split(",") : null;
   const naoSalvar = process.env.NAO_SALVAR === "1";
 
@@ -78,6 +81,12 @@ export async function coletar({ cliente = criarCliente(), log = console.log } = 
       }
       const doCatalogo = [...indice.keys()].filter((k) => k.startsWith(loja.idx + ":")).length;
       resumo.push({ loja: loja.nome, slug: loja.slug, ofertasLidas: vistos.size, atualizadas, doCatalogo, desconhecidas });
+      // leitura muito abaixo da anterior: provável mudança no site da fonte
+      const antes = estado.lidas[loja.slug] || 0;
+      if (vistos.size === 0 || (antes >= 100 && vistos.size < antes * 0.5)) {
+        avisos.push(`${loja.nome}: só ${vistos.size} ofertas lidas (na vez anterior: ${antes}). A fonte pode ter mudado o site.`);
+      }
+      estado.lidas[loja.slug] = vistos.size;
       estado.varredura[loja.slug] = dia;
     }
 
@@ -108,6 +117,7 @@ export async function coletar({ cliente = criarCliente(), log = console.log } = 
     const s = cliente.stats();
     if (e instanceof Bloqueio) {
       log(`::warning::Fonte de preços respondeu ${e.message}. Coleta interrompida; dados anteriores mantidos.`);
+      await alertar(`A fonte de preços bloqueou a coleta (${e.message}). Os preços do site ficaram como estavam.`);
       log(`Pedidos: ${s.pedidos} | ${(s.bytes / 1048576).toFixed(1)} MB | ${Math.round((Date.now() - inicio) / 1000)}s`);
       return { ok: false, bloqueio: true };
     }
@@ -138,6 +148,8 @@ export async function coletar({ cliente = criarCliente(), log = console.log } = 
   estado.fila = [...fila.values()].sort((a, b) => (a.t < b.t ? 1 : -1)).slice(0, 3000);
   const s = cliente.stats();
   imprimirResumo(resumo, s, inicio, log);
+  for (const a of avisos) log(`::warning::${a}`);
+  if (avisos.length) await alertar(avisos.join("\n"));
   log(`Perfumes novos no catálogo: ${novosAdicionados} | total: ${bruto.produtos.length} | fila de ofertas desconhecidas: ${estado.fila.length} | cotação: ${cotacao ?? "não lida"}`);
 
   if (naoSalvar) {
@@ -160,5 +172,9 @@ function imprimirResumo(resumo, s, inicio, log) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  coletar().catch((e) => { console.error("ERRO:", e.message); process.exitCode = 1; });
+  coletar().catch(async (e) => {
+    console.error("ERRO:", e.message);
+    await alertar(`A coleta de preços falhou: ${e.message}. Os preços do site ficaram como estavam.`);
+    process.exitCode = 1;
+  });
 }

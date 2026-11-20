@@ -10,6 +10,7 @@ import {
   caminho, lerJson, gravarJson, lerLojas, hoje, criarCliente, Bloqueio,
   lerModelos, lerOfertas, ofertasDasLojas, normalizar, parametrosPreco, produtoPublico,
 } from "../scraper/comum.mjs";
+import { alertar } from "../scraper/alerta.mjs";
 
 const env = process.env;
 const PORTA = Number(env.PORTA || 8098);
@@ -75,6 +76,7 @@ export function criarServico({ cliente = criarCliente({ esperaMs: Number(env.ESP
       if (e instanceof Bloqueio) {
         bloqueadoAte = Date.now() + PAUSA_BLOQUEIO_MS;
         console.warn(`fonte respondeu ${e.message}; pausa de 30 min`);
+        alertar(`A busca sob demanda foi bloqueada pela fonte (${e.message}). Ela fica 30 min parada; o site segue com o catálogo.`);
         return { produtos: [], indisponivel: true };
       }
       console.warn("erro na busca:", e.message);

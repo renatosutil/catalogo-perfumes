@@ -1,0 +1,38 @@
+name: Vigia do catálogo
+
+# Confere, de fora da VPS, se os preços do site foram lidos recentemente e se a busca responde.
+# Se algo falhar, o GitHub manda e-mail avisando que o workflow falhou.
+on:
+  schedule:
+    - cron: "0 12 * * *"        # todo dia às 09:00 (Brasília)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vigiar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conferir preços recentes e busca
+        run: |
+          node --input-type=module -e '
+          const site = "https://renatosutil.github.io/catalogo-perfumes/";
+          const t = Date.now();
+          const dados = await (await fetch(site + "data.json?t=" + t)).json();
+          const cfg = await (await fetch(site + "config.json?t=" + t)).json();
+          const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+          const recente = dados.produtos.map((p) => p.a).filter(Boolean).sort().pop();
+          const dias = Math.round((Date.parse(hoje) - Date.parse(recente)) / 864e5);
+          console.log(`Perfumes: ${dados.produtos.length} | preço mais recente lido em ${recente} (${dias} dia(s))`);
+          let falhou = false;
+          if (!(dias <= 2)) { console.log(`::error::Os preços não são atualizados há ${dias} dias. Veja ~/catalogo-perfumes/coleta.log na VPS.`); falhou = true; }
+          if (cfg.api) {
+            try {
+              const r = await fetch(cfg.api.replace(/\/$/, "") + "/saude", { signal: AbortSignal.timeout(20000) });
+              console.log(`Busca sob demanda: HTTP ${r.status}`);
+              if (!r.ok) throw new Error("HTTP " + r.status);
+            } catch (e) { console.log(`::error::A busca sob demanda não responde (${e.message}). A VPS pode estar fora do ar.`); falhou = true; }
+          }
+          process.exit(falhou ? 1 : 0);
+          '
