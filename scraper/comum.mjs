@@ -131,9 +131,22 @@ export const idModelo = (href) => (/[^_]_(\d+)\/?$/.exec(href || "") || [])[1] |
 // tipos de modelo aceitos: perfumes e kits de perfume
 export const ehPerfume = (href) => /^\/?(perfume|kit-perfumes?)-/i.test(href || "");
 export const idOferta = (href) => (/__(\d+)\/?$/.exec(href || "") || [])[1] || null;
-// nome de oferta solta que é perfume ou kit de perfume (e não creme, aromatizador etc.)
+// body splash / body mist / colônia (e não loção, creme, hidratante...)
+export function ehSplash(nome) {
+  const n = String(nome || "");
+  return /\b(body\s*splash|body\s*mist|splash|fragrance\s*mist|col[oô]nia)\b/i.test(n)
+    && !/\b(lo[çc][ãa]o|lotion|creme|cream|hidratante|manteiga|butter|gel|sabonete|shampoo|esfoliante)\b/i.test(n);
+}
+// modelos "Loção Corporal" que, na verdade, são body splash: decide pelo nome que as lojas dão às ofertas
+export function modeloEhSplash(nomesOfertas) {
+  const n = nomesOfertas.filter(Boolean);
+  return n.length > 0 && n.filter(ehSplash).length / n.length >= 0.5;
+}
+export const nomeSplash = (nome) => String(nome).replace(/^Lo[çc][ãa]o Corporal\s+/i, "Body Splash ");
+// nome de oferta solta que é perfume, kit de perfume ou body splash (e não creme, aromatizador etc.)
 export function ofertaPerfume(nome) {
   const n = String(nome || "");
+  if (ehSplash(n)) return true;
   if (/\bkit\b/i.test(n)) return /\b(perfumes?|edp|edt|eau|parfum|\d+\s*ml)\b/i.test(n);
   if (/\b(creme|hidratante|lo[çc][ãa]o|sabonete|desodorante|aromatizador|air freshener|vela|body|hair mist|shampoo|gel)\b/i.test(n)) return false;
   return /\b(perfume|edp|edt|eau de (parfum|toilette)|extrait|parfum)\b/i.test(n);
@@ -154,7 +167,8 @@ export function lerBusca(html) {
   return { itens, total: lerTotal($) };
 }
 
-// listagem/busca geral de modelos: [{id, href, nome, img}]
+// listagem/busca geral de modelos: [{id, href, nome, img, verificarSplash}]
+// "Loção Corporal" entra marcado para verificar: só fica se as lojas o anunciam como body splash
 export function lerModelos(html) {
   const $ = cheerio.load(html);
   const itens = [];
@@ -162,8 +176,10 @@ export function lerModelos(html) {
     const a = $(el).find(".promocao-item-nome a").first();
     const href = a.attr("href");
     const id = idModelo(href);
-    if (!id || !(ehPerfume(href) || (/^\/?kit-/i.test(href) && ofertaPerfume(a.text())))) return;
-    itens.push({ id, href, nome: a.text().trim().replace(/^Perfume\s+/i, ""), img: imagem($, el) });
+    if (!id) return;
+    const verificarSplash = /^\/?locao-corporal-/i.test(href);
+    if (!(ehPerfume(href) || verificarSplash || (/^\/?kit-/i.test(href) && ofertaPerfume(a.text())))) return;
+    itens.push({ id, href, nome: a.text().trim().replace(/^Perfume\s+/i, ""), img: imagem($, el), verificarSplash });
   });
   return { itens, total: lerTotal($) };
 }

@@ -52,6 +52,12 @@ const server = http.createServer((req, res) => {
         + solta("/creme-asad__7002/", "Loja Alfa", "9,00", "778", "Creme Corporal Asad 280g")
         + solta("/kit-asad-outra__7003/", "Outra Loja", "30,00", "779", "Kit Perfume Asad Outra Edp")));
     }
+    if (!loja && q === "love spell") {
+      const solta = (href, loja, usd, cod, nome) => oferta(loja, usd, cod, nome).replace('href="/x__1/"', `href="${href}"`);
+      return fim(pagina(3, modelo("/locao-corporal-vs-love-spell-250ml_9100/", "Loção Corporal Victoria's Secret Love Spell 250ML")
+        + modelo("/locao-corporal-vs-amber-romance-236ml_9101/", "Loção Corporal Victoria's Secret Amber Romance 236ML")
+        + solta("/body-splash-vs-bare-vanilla__7101/", "Loja Beta", "13,00", "881", "Body Splash Victoria's Secret Bare Vanilla 250ML")));
+    }
     if (loja === "loja-alfa" && q === "perfume masculino" && pag === 1) {
       return fim(pagina(2, oferta("Loja Alfa", "18,50", "111") + oferta("Loja Alfa", "10,00", "999", "Perfume Desconhecido")));
     }
@@ -65,6 +71,8 @@ const server = http.createServer((req, res) => {
   }
   if (u.pathname === "/perfume-novo-um_9001/") return fim(`<body>${oferta("Loja Alfa", "25,00", "333")}${oferta("Outra Loja", "5,00", "1")}${oferta("Loja Beta", "27,00", "444")}</body>`);
   if (u.pathname === "/kit-perfume-asad-duo_9005/") return fim(`<body>${oferta("Loja Beta", "30,00", "555")}</body>`);
+  if (u.pathname === "/locao-corporal-vs-love-spell-250ml_9100/") return fim(`<body>${oferta("Loja Alfa", "10,75", "901", "Body Mist Feminino Victoria's Secret Love Spell 250ML")}${oferta("Outra Loja", "12,00", "902", "Victoria's Secret Splash Love Spell")}</body>`);
+  if (u.pathname === "/locao-corporal-vs-amber-romance-236ml_9101/") return fim(`<body>${oferta("Loja Alfa", "15,00", "903", "Loção Hidratante Victoria's Secret Amber Romance 236ML")}${oferta("Outra Loja", "14,00", "904", "Loção Corporal VS Amber Romance")}</body>`);
   if (u.pathname === "/perfume_5001/") return fim(`<body><div class="ficha-olfativa-lead">O Marca X é um perfume âmbar, no Compras Paraguai.</div>
 <ul class="ficha-olfativa-badges"><li><span class="ficha-olfativa-badge-rotulo">Público</span> Masculino</li><li><span class="ficha-olfativa-badge-rotulo">Lançamento</span> 2021</li></ul>
 <ul class="ficha-olfativa-acordes"><li><span class="ficha-olfativa-acorde"><span class="ficha-olfativa-acorde-nome">Âmbar</span></span></li></ul>
@@ -178,6 +186,12 @@ try {
   assert.equal(pedidos.length, 1, "2º clique vem do cache");
   assert.equal((await (await fetch(`${URL_API}/ficha?r=0-777`)).json()).ficha, null, "kit sem ficha");
   passo("ficha olfativa (descrição sem citar a fonte, notas, duração; cache; kit sem ficha)");
+  // body splash: "Loção Corporal" anunciado como mist/splash entra; loção de verdade não; splash em oferta solta entra
+  const bs = (await (await fetch(`${URL_API}/buscar?q=love%20spell`)).json()).produtos;
+  assert.ok(bs.some((p) => p.n === "Body Splash Victoria's Secret Love Spell 250ML" && p.r === "0-901"), JSON.stringify(bs));
+  assert.ok(bs.some((p) => p.n === "Body Splash Victoria's Secret Bare Vanilla 250ML" && p.r === "1-881"), JSON.stringify(bs));
+  assert.ok(!bs.some((p) => /Amber Romance/.test(p.n)), "loção de verdade fica de fora");
+  passo("body splash (modelo 'Loção Corporal' vendido como splash entra com nome certo; loção não)");
   api.close();
   assert.equal(resp.produtos.length, 3, JSON.stringify(resp));
   for (const p of resp.produtos) assert.deepEqual(Object.keys(p).sort(), ["a", "i", "n", "p", "r"]);
@@ -185,7 +199,7 @@ try {
   assert.ok(resp.produtos.some((p) => p.n === "Kit Perfume Asad Trio Edp 100ML" && p.r === "0-777"), "kit em oferta solta entra");
   assert.ok(!resp.produtos.some((p) => /Creme|Outra/.test(p.n)), "creme e loja de fora ficam de fora");
   assert.ok(!JSON.stringify(resp).match(/Loja|US\$|usd|margem/i));
-  assert.deepEqual(ler("descobertos.json").map((p) => p.id).sort(), ["9005", "o7001"]);
+  assert.deepEqual(ler("descobertos.json").map((p) => p.id).sort(), ["9005", "9100", "o7001", "o7101"]);
   passo("busca sob demanda (só n/i/p/r/a; kit entra, creme não; guarda o achado)");
 
   // coleta seguinte junta os descobertos ao catálogo

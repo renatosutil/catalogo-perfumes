@@ -105,7 +105,7 @@ a.btn{display:block;text-align:center;text-decoration:none}
 </div></dialog>
 
 <script>
-const BRANDS=["Al Wataniah","Maison Alhambra","Carolina Herrera","Paco Rabanne","Calvin Klein","Britney Spears","Tommy Hilfiger","French Avenue","Dar El Ward","Jean Paul Gaultier","Christian Dior","Giorgio Armani","Antonio Banderas","Marina de Bourbon","Jacques Bogart","Dolce & Gabbana","Al Haramain","Jimmy Choo","Ferrari","Lancôme","Lattafa","Armaf","Rasasi","Afnan","Karma","Azzaro","Xerjoff","Bidaya","Orientica","Bharara","Animale","MontBlanc","Kenzo","Moschino","Rayhaan","Asdaaf","Zimaya"];
+const BRANDS=["Victoria's Secret","Bath & Body Works","Al Wataniah","Maison Alhambra","Carolina Herrera","Paco Rabanne","Calvin Klein","Britney Spears","Tommy Hilfiger","French Avenue","Dar El Ward","Jean Paul Gaultier","Christian Dior","Giorgio Armani","Antonio Banderas","Marina de Bourbon","Jacques Bogart","Dolce & Gabbana","Al Haramain","Jimmy Choo","Ferrari","Lancôme","Lattafa","Armaf","Rasasi","Afnan","Karma","Azzaro","Xerjoff","Bidaya","Orientica","Bharara","Animale","MontBlanc","Kenzo","Moschino","Rayhaan","Asdaaf","Zimaya"];
 const brl=v=>v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -130,8 +130,8 @@ function build(){
   const validade=Number(CFG.diasPrecoValido)||7;
   P=DB.produtos.map((d,i)=>{
     const brand=BRANDS.find(b=>d.n.startsWith(b))||BRANDS.find(b=>d.n.includes(" "+b+" "))||d.n.split(" ")[0];
-    const gender=/Masculino/i.test(d.n)?"Masculino":/Feminino/i.test(d.n)?"Feminino":"Unissex";
-    const name=d.n.slice(brand.length).trim().replace(/\s*(Eau de Parfum|Eau de Toilette|Extrait de Parfum|Parfum)\s*/i," ").replace(/\s+(Masculino|Feminino|Unissex)\b/i,"").replace(/\s*\d+\s*ML\b/i,"").trim();
+    const gender=/Masculino/i.test(d.n)?"Masculino":/Feminino/i.test(d.n)?"Feminino":/Victoria's Secret/i.test(d.n)&&!/Unissex/i.test(d.n)?"Feminino":"Unissex";
+    const name=d.n.replace(brand,"").replace(/\s+/g," ").trim().replace(/\s*(Eau de Parfum|Eau de Toilette|Extrait de Parfum|Parfum)\s*/i," ").replace(/\s+(Masculino|Feminino|Unissex)\b/i,"").replace(/\s*\d+\s*ML\b/i,"").trim();
     const conc=(d.n.match(/Eau de Parfum|Eau de Toilette|Extrait de Parfum/i)||[""])[0];
     const ml=(d.n.match(/(\d+)\s*ML/i)||[,""])[1];
     const dias=idade(d.a);

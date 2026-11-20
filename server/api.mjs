@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   caminho, lerJson, gravarJson, lerLojas, hoje, criarCliente, Bloqueio,
-  lerModelos, lerOfertas, lerBusca, lerFicha, ofertaPerfume, ofertasDasLojas, normalizar, parametrosPreco, produtoPublico,
+  lerModelos, lerOfertas, lerBusca, lerFicha, ofertaPerfume, modeloEhSplash, nomeSplash, ofertasDasLojas, normalizar, parametrosPreco, produtoPublico,
 } from "../scraper/comum.mjs";
 import { alertar } from "../scraper/alerta.mjs";
 
@@ -31,6 +31,7 @@ export function criarServico({ cliente = criarCliente({ esperaMs: Number(env.ESP
   const porCliente = new Map(); // ip -> [instantes]
   let pedidosFonte = []; // instantes dos pedidos à fonte (janela de 1 min)
   let bloqueadoAte = 0;
+  const naoPerfume = new Set(); // modelos já abertos que não servem (loção de verdade, sem nossas lojas)
 
   // catálogo conhecido = bruto.json (recarregado quando muda) + descobertos.json
   let bruto = { produtos: [] }, mtime = 0;
@@ -82,13 +83,20 @@ export function criarServico({ cliente = criarCliente({ esperaMs: Number(env.ESP
       }
       let abertos = 0;
       for (const m of itens) {
-        const conhecido = cat.porId.get(m.id) || cat.porNome.get(normalizar(m.nome));
+        if (naoPerfume.has(m.id)) continue;
+        const nomeModelo = m.verificarSplash ? nomeSplash(m.nome) : m.nome;
+        const conhecido = cat.porId.get(m.id) || cat.porNome.get(normalizar(nomeModelo));
         if (conhecido) { if (!saida.includes(conhecido)) saida.push(conhecido); continue; }
         if (abertos >= MAX_NOVOS_BUSCA || !podeConsultarFonte(1)) { parcial = true; continue; }
         abertos++;
-        const o = ofertasDasLojas(lerOfertas(await pedir(m.href)), nomes, hoje());
-        if (!o.length || o.some((x) => cat.porOferta.has(`${x[0]}:${x[2]}`))) continue;
-        const prod = { id: m.id, n: m.nome, i: m.img, o };
+        const pagina = await pedir(m.href);
+        // "Loção Corporal" só entra se as lojas o anunciam como body splash/mist/colônia
+        if (m.verificarSplash && !modeloEhSplash(lerBusca(pagina).itens.map((x) => x.nome))) { naoPerfume.add(m.id); continue; }
+        const o = ofertasDasLojas(lerOfertas(pagina), nomes, hoje());
+        if (!o.length) { naoPerfume.add(m.id); continue; }
+        const ja = o.map((x) => cat.porOferta.get(`${x[0]}:${x[2]}`)).find(Boolean);
+        if (ja) { if (!saida.includes(ja)) saida.push(ja); continue; }
+        const prod = { id: m.id, n: nomeModelo, i: m.img, o };
         novos.push(prod);
         saida.push(prod);
       }
