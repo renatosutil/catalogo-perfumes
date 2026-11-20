@@ -8,7 +8,7 @@ import { existsSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   caminho, lerJson, gravarJson, lerLojas, hoje, criarCliente, Bloqueio,
-  lerModelos, lerOfertas, ofertasDasLojas, normalizar, parametrosPreco, produtoPublico,
+  lerModelos, lerOfertas, lerBusca, ofertaPerfume, ofertasDasLojas, normalizar, parametrosPreco, produtoPublico,
 } from "../scraper/comum.mjs";
 import { alertar } from "../scraper/alerta.mjs";
 
@@ -36,12 +36,13 @@ export function criarServico({ cliente = criarCliente({ esperaMs: Number(env.ESP
     const arq = caminho("bruto.json");
     if (existsSync(arq) && statSync(arq).mtimeMs !== mtime) { bruto = lerJson(arq); mtime = statSync(arq).mtimeMs; }
     const extra = lerJson(DESCOBERTOS, []);
-    const porId = new Map(), porNome = new Map();
+    const porId = new Map(), porNome = new Map(), porOferta = new Map();
     for (const p of [...bruto.produtos, ...extra]) {
       if (p.id) porId.set(String(p.id), p);
       porNome.set(normalizar(p.n), p);
+      for (const o of p.o || []) porOferta.set(`${o[0]}:${o[2]}`, p);
     }
-    return { porId, porNome, extra, cotacao: preco.cotacaoFixa || bruto.cotacao };
+    return { porId, porNome, porOferta, extra, cotacao: preco.cotacaoFixa || bruto.cotacao };
   };
 
   const podeConsultarFonte = (n) => {
@@ -61,13 +62,30 @@ export function criarServico({ cliente = criarCliente({ esperaMs: Number(env.ESP
     const saida = [], novos = [];
     let parcial = false;
     try {
-      const { itens } = lerModelos(await pedir(`/busca/?q=${encodeURIComponent(termo)}`));
+      const html = await pedir(`/busca/?q=${encodeURIComponent(termo)}`);
+      const { itens } = lerModelos(html);
+      // ofertas soltas (sem modelo, ex.: kits) das nossas lojas: entram como produto próprio, 1 oferta
+      const vistos = new Set();
+      for (const it of lerBusca(html).itens) {
+        const k = nomes.indexOf(it.loja);
+        const chaveOferta = `${k}:${it.cod}`;
+        if (k < 0 || !it.idOferta || !ofertaPerfume(it.nome) || vistos.has(chaveOferta)) continue;
+        vistos.add(chaveOferta);
+        const conhecido = cat.porOferta.get(chaveOferta) || cat.porId.get("o" + it.idOferta);
+        if (conhecido) { if (!saida.includes(conhecido)) saida.push(conhecido); continue; }
+        const prod = { id: "o" + it.idOferta, n: it.nome.replace(/^Perfume\s+/i, ""), i: it.img, o: [[k, it.usd, it.cod, hoje()]] };
+        novos.push(prod);
+        saida.push(prod);
+        cat.porOferta.set(chaveOferta, prod);
+      }
+      let abertos = 0;
       for (const m of itens) {
         const conhecido = cat.porId.get(m.id) || cat.porNome.get(normalizar(m.nome));
-        if (conhecido) { saida.push(conhecido); continue; }
-        if (novos.length >= MAX_NOVOS_BUSCA || !podeConsultarFonte(1)) { parcial = true; continue; }
+        if (conhecido) { if (!saida.includes(conhecido)) saida.push(conhecido); continue; }
+        if (abertos >= MAX_NOVOS_BUSCA || !podeConsultarFonte(1)) { parcial = true; continue; }
+        abertos++;
         const o = ofertasDasLojas(lerOfertas(await pedir(m.href)), nomes, hoje());
-        if (!o.length) continue;
+        if (!o.length || o.some((x) => cat.porOferta.has(`${x[0]}:${x[2]}`))) continue;
         const prod = { id: m.id, n: m.nome, i: m.img, o };
         novos.push(prod);
         saida.push(prod);

@@ -45,7 +45,12 @@ const server = http.createServer((req, res) => {
     if (modo === "429") { res.statusCode = 429; return fim("devagar"); }
     const q = u.searchParams.get("q"), loja = u.searchParams.get("loja"), pag = Number(u.searchParams.get("page") || 1);
     if (!loja && q === "asad") {
-      return fim(pagina(3, modelo("/creme-corporal-asad_9006/", "Creme Asad") + modelo("/perfume-marca-x_5001/", "Marca X Masculino 100ML") + modelo("/kit-perfume-asad-duo_9005/", "Kit Asad Duo Masculino")));
+      // ofertas soltas (sem modelo): kit da nossa loja entra; creme e loja de fora não
+      const solta = (href, loja, usd, cod, nome) => oferta(loja, usd, cod, nome).replace('href="/x__1/"', `href="${href}"`);
+      return fim(pagina(6, modelo("/creme-corporal-asad_9006/", "Creme Asad") + modelo("/perfume-marca-x_5001/", "Marca X Masculino 100ML") + modelo("/kit-perfume-asad-duo_9005/", "Kit Asad Duo Masculino")
+        + solta("/kit-asad-trio-100ml__7001/", "Loja Alfa", "40,00", "777", "Kit Perfume Asad Trio Edp 100ML")
+        + solta("/creme-asad__7002/", "Loja Alfa", "9,00", "778", "Creme Corporal Asad 280g")
+        + solta("/kit-asad-outra__7003/", "Outra Loja", "30,00", "779", "Kit Perfume Asad Outra Edp")));
     }
     if (loja === "loja-alfa" && q === "perfume masculino" && pag === 1) {
       return fim(pagina(2, oferta("Loja Alfa", "18,50", "111") + oferta("Loja Alfa", "10,00", "999", "Perfume Desconhecido")));
@@ -157,11 +162,13 @@ try {
   const resp = await (await fetch(`${URL_API}/buscar?q=asad`)).json();
   assert.equal((await fetch(`${URL_API}/buscar?q=ab`)).status, 400);
   api.close();
-  assert.equal(resp.produtos.length, 2, JSON.stringify(resp));
+  assert.equal(resp.produtos.length, 3, JSON.stringify(resp));
   for (const p of resp.produtos) assert.deepEqual(Object.keys(p).sort(), ["a", "i", "n", "p", "r"]);
   assert.ok(resp.produtos.some((p) => p.n.startsWith("Kit Asad") && p.r === "1-555"));
+  assert.ok(resp.produtos.some((p) => p.n === "Kit Perfume Asad Trio Edp 100ML" && p.r === "0-777"), "kit em oferta solta entra");
+  assert.ok(!resp.produtos.some((p) => /Creme|Outra/.test(p.n)), "creme e loja de fora ficam de fora");
   assert.ok(!JSON.stringify(resp).match(/Loja|US\$|usd|margem/i));
-  assert.equal(ler("descobertos.json")[0].id, "9005");
+  assert.deepEqual(ler("descobertos.json").map((p) => p.id).sort(), ["9005", "o7001"]);
   passo("busca sob demanda (só n/i/p/r/a; kit entra, creme não; guarda o achado)");
 
   // coleta seguinte junta os descobertos ao catálogo

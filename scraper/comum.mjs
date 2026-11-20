@@ -129,7 +129,15 @@ const imagem = ($, el) => {
 // modelo = link com "_<id>/" (um sublinhado); oferta isolada usa "__<id>/"
 export const idModelo = (href) => (/[^_]_(\d+)\/?$/.exec(href || "") || [])[1] || null;
 // tipos de modelo aceitos: perfumes e kits de perfume
-export const ehPerfume = (href) => /^\/?(perfume|kit-perfume)-/i.test(href || "");
+export const ehPerfume = (href) => /^\/?(perfume|kit-perfumes?)-/i.test(href || "");
+export const idOferta = (href) => (/__(\d+)\/?$/.exec(href || "") || [])[1] || null;
+// nome de oferta solta que é perfume ou kit de perfume (e não creme, aromatizador etc.)
+export function ofertaPerfume(nome) {
+  const n = String(nome || "");
+  if (/\bkit\b/i.test(n)) return /\b(perfumes?|edp|edt|eau|parfum|\d+\s*ml)\b/i.test(n);
+  if (/\b(creme|hidratante|lo[çc][ãa]o|sabonete|desodorante|aromatizador|air freshener|vela|body|hair mist|shampoo|gel)\b/i.test(n)) return false;
+  return /\b(perfume|edp|edt|eau de (parfum|toilette)|extrait|parfum)\b/i.test(n);
+}
 
 // busca filtrada por loja: ofertas [{loja, cod, usd, nome}]
 export function lerBusca(html) {
@@ -140,7 +148,8 @@ export function lerBusca(html) {
     const cod = lerCodigo($(el).text());
     const usd = lerUsd($(el));
     if (!loja || !cod || !usd) return;
-    itens.push({ loja, cod, usd, nome: $(el).find(".promocao-item-nome a").first().text().trim() });
+    const a = $(el).find(".promocao-item-nome a").first();
+    itens.push({ loja, cod, usd, nome: a.text().trim(), idOferta: idOferta(a.attr("href")), img: imagem($, el) });
   });
   return { itens, total: lerTotal($) };
 }
@@ -153,7 +162,7 @@ export function lerModelos(html) {
     const a = $(el).find(".promocao-item-nome a").first();
     const href = a.attr("href");
     const id = idModelo(href);
-    if (!id || !ehPerfume(href)) return;
+    if (!id || !(ehPerfume(href) || (/^\/?kit-/i.test(href) && ofertaPerfume(a.text())))) return;
     itens.push({ id, href, nome: a.text().trim().replace(/^Perfume\s+/i, ""), img: imagem($, el) });
   });
   return { itens, total: lerTotal($) };

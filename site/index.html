@@ -109,7 +109,7 @@ function pic(p){
 function build(){
   const validade=Number(CFG.diasPrecoValido)||7;
   P=DB.produtos.map((d,i)=>{
-    const brand=BRANDS.find(b=>d.n.startsWith(b))||d.n.split(" ")[0];
+    const brand=BRANDS.find(b=>d.n.startsWith(b))||BRANDS.find(b=>d.n.includes(" "+b+" "))||d.n.split(" ")[0];
     const gender=/Masculino/i.test(d.n)?"Masculino":/Feminino/i.test(d.n)?"Feminino":"Unissex";
     const name=d.n.slice(brand.length).trim().replace(/\s*(Eau de Parfum|Eau de Toilette|Extrait de Parfum|Parfum)\s*/i," ").replace(/\s+(Masculino|Feminino|Unissex)\b/i,"").replace(/\s*\d+\s*ML\b/i,"").trim();
     const conc=(d.n.match(/Eau de Parfum|Eau de Toilette|Extrait de Parfum/i)||[""])[0];
