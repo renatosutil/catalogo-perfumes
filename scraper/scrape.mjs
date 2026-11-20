@@ -145,7 +145,7 @@ export async function coletar({ cliente = criarCliente(), log = console.log } = 
   }
 
   if (cotacao) { bruto.cotacao = cotacao; bruto.cotacaoEm = dia; }
-  estado.fila = [...fila.values()].sort((a, b) => (a.t < b.t ? 1 : -1)).slice(0, 3000);
+  estado.fila = [...fila.values()].sort((a, b) => (a.t < b.t ? 1 : -1)).slice(0, 30000);
   const s = cliente.stats();
   imprimirResumo(resumo, s, inicio, log);
   for (const a of avisos) log(`::warning::${a}`);
