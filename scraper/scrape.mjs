@@ -10,11 +10,11 @@ import { existsSync, renameSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   caminho, lerJson, gravarJson, lerLojas, hoje, dias, criarCliente, Bloqueio, LimitePedidos,
-  lerBusca, lerModelos, lerOfertas, lerCotacao, ofertasDasLojas, normalizar,
+  lerBusca, lerModelos, lerOfertas, lerCotacao, ofertasDasLojas, normalizar, ehPerfume,
 } from "./comum.mjs";
 import { alertar } from "./alerta.mjs";
 
-const TERMOS_PADRAO = ["perfume masculino", "perfume feminino", "perfume unissex", "body splash", "body mist"];
+const TERMOS_PADRAO = ["perfume masculino", "perfume feminino", "perfume unissex", "body splash", "body mist", "creme corporal", "locao corporal"];
 const POR_PAGINA = 20;
 const MAX_NOVOS = Number(process.env.MAX_NOVOS || 150);
 const PAGINAS_NOVOS = Number(process.env.PAGINAS_NOVOS || 10);
@@ -96,7 +96,7 @@ export async function coletar({ cliente = criarCliente(), log = console.log } = 
         for (let pag = 1; pag <= PAGINAS_NOVOS; pag++) {
           const { itens, total } = lerModelos((await cliente.get(`/perfume/?page=${pag}&loja=${loja.slug}`)).html);
           for (const m of itens) {
-            if (m.verificarSplash || ids.has(m.id) || nomesConhecidos.has(normalizar(m.nome)) || candidatos.has(m.id)) continue;
+            if (!ehPerfume(m.href) || ids.has(m.id) || nomesConhecidos.has(normalizar(m.nome)) || candidatos.has(m.id)) continue;
             candidatos.set(m.id, m);
           }
           if (!itens.length || pag * POR_PAGINA >= (total || 0)) break;

@@ -143,12 +143,23 @@ export function modeloEhSplash(nomesOfertas) {
   return n.length > 0 && n.filter(ehSplash).length / n.length >= 0.5;
 }
 export const nomeSplash = (nome) => String(nome).replace(/^Lo[çc][ãa]o Corporal\s+/i, "Body Splash ");
-// nome de oferta solta que é perfume, kit de perfume ou body splash (e não creme, aromatizador etc.)
+// creme / loção / hidratante corporal (e não creme dental, de barbear, capilar...)
+export function ehCreme(nome) {
+  const n = String(nome || "");
+  return /\b(lo[çc][ãa]o|lotion|creme|cream|hidratante|body butter|manteiga corporal)\b/i.test(n)
+    && !/\b(dental|dente|barbear|cabelo|capilar|shampoo|condicionador|pentear)\b/i.test(n);
+}
+// tipos de modelo de cuidado corporal aceitos (além de perfume)
+export const ehModeloCorpo = (href) => /^\/?(locao-corporal|creme-corporal|creme-hidratante|hidratante-corporal|body-splash|body-mist)-/i.test(href || "");
+// itens que nunca entram (mesmo citando perfume)
+const FORA = /\b(sabonete|desodorante|aromatizador|aromatizante|air freshener|difusor|vela|hair mist|shampoo|condicionador|gel de banho|creme dental)\b/i;
+// nome de oferta solta que é perfume, kit, body splash ou creme/loção corporal
 export function ofertaPerfume(nome) {
   const n = String(nome || "");
-  if (ehSplash(n)) return true;
   if (/\bkit\b/i.test(n)) return /\b(perfumes?|edp|edt|eau|parfum|\d+\s*ml)\b/i.test(n);
-  if (/\b(creme|hidratante|lo[çc][ãa]o|sabonete|desodorante|aromatizador|air freshener|vela|body|hair mist|shampoo|gel)\b/i.test(n)) return false;
+  if (FORA.test(n)) return false;
+  if (ehSplash(n) || ehCreme(n)) return true;
+  if (/\bbody\b/i.test(n)) return false;
   return /\b(perfume|edp|edt|eau de (parfum|toilette)|extrait|parfum)\b/i.test(n);
 }
 
@@ -178,7 +189,7 @@ export function lerModelos(html) {
     const id = idModelo(href);
     if (!id) return;
     const verificarSplash = /^\/?locao-corporal-/i.test(href);
-    if (!(ehPerfume(href) || verificarSplash || (/^\/?kit-/i.test(href) && ofertaPerfume(a.text())))) return;
+    if (!(ehPerfume(href) || ehModeloCorpo(href) || (/^\/?kit-/i.test(href) && ofertaPerfume(a.text())))) return;
     itens.push({ id, href, nome: a.text().trim().replace(/^Perfume\s+/i, ""), img: imagem($, el), verificarSplash });
   });
   return { itens, total: lerTotal($) };

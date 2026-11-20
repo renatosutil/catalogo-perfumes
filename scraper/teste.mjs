@@ -45,11 +45,12 @@ const server = http.createServer((req, res) => {
     if (modo === "429") { res.statusCode = 429; return fim("devagar"); }
     const q = u.searchParams.get("q"), loja = u.searchParams.get("loja"), pag = Number(u.searchParams.get("page") || 1);
     if (!loja && q === "asad") {
-      // ofertas soltas (sem modelo): kit da nossa loja entra; creme e loja de fora não
+      // ofertas soltas (sem modelo): kit e creme da nossa loja entram; aromatizador e loja de fora não
       const solta = (href, loja, usd, cod, nome) => oferta(loja, usd, cod, nome).replace('href="/x__1/"', `href="${href}"`);
-      return fim(pagina(6, modelo("/creme-corporal-asad_9006/", "Creme Asad") + modelo("/perfume-marca-x_5001/", "Marca X Masculino 100ML") + modelo("/kit-perfume-asad-duo_9005/", "Kit Asad Duo Masculino")
+      return fim(pagina(7, modelo("/creme-corporal-asad_9006/", "Creme Corporal Asad 280g") + modelo("/perfume-marca-x_5001/", "Marca X Masculino 100ML") + modelo("/kit-perfume-asad-duo_9005/", "Kit Asad Duo Masculino")
         + solta("/kit-asad-trio-100ml__7001/", "Loja Alfa", "40,00", "777", "Kit Perfume Asad Trio Edp 100ML")
-        + solta("/creme-asad__7002/", "Loja Alfa", "9,00", "778", "Creme Corporal Asad 280g")
+        + solta("/creme-asad__7002/", "Loja Alfa", "9,00", "778", "Creme Hidratante Asad 200g")
+        + solta("/asad-air-freshener__7004/", "Loja Alfa", "4,00", "782", "Lattafa Asad Air Freshener 300ML")
         + solta("/kit-asad-outra__7003/", "Outra Loja", "30,00", "779", "Kit Perfume Asad Outra Edp")));
     }
     if (!loja && q === "love spell") {
@@ -71,6 +72,7 @@ const server = http.createServer((req, res) => {
   }
   if (u.pathname === "/perfume-novo-um_9001/") return fim(`<body>${oferta("Loja Alfa", "25,00", "333")}${oferta("Outra Loja", "5,00", "1")}${oferta("Loja Beta", "27,00", "444")}</body>`);
   if (u.pathname === "/kit-perfume-asad-duo_9005/") return fim(`<body>${oferta("Loja Beta", "30,00", "555")}</body>`);
+  if (u.pathname === "/creme-corporal-asad_9006/") return fim(`<body>${oferta("Loja Alfa", "11,00", "780", "Creme Corporal Hidratante Lattafa Asad 280g")}</body>`);
   if (u.pathname === "/locao-corporal-vs-love-spell-250ml_9100/") return fim(`<body>${oferta("Loja Alfa", "10,75", "901", "Body Mist Feminino Victoria's Secret Love Spell 250ML")}${oferta("Outra Loja", "12,00", "902", "Victoria's Secret Splash Love Spell")}</body>`);
   if (u.pathname === "/locao-corporal-vs-amber-romance-236ml_9101/") return fim(`<body>${oferta("Loja Alfa", "15,00", "903", "Loção Hidratante Victoria's Secret Amber Romance 236ML")}${oferta("Outra Loja", "14,00", "904", "Loção Corporal VS Amber Romance")}</body>`);
   if (u.pathname === "/perfume_5001/") return fim(`<body><div class="ficha-olfativa-lead">O Marca X é um perfume âmbar, no Compras Paraguai.</div>
@@ -186,21 +188,23 @@ try {
   assert.equal(pedidos.length, 1, "2º clique vem do cache");
   assert.equal((await (await fetch(`${URL_API}/ficha?r=0-777`)).json()).ficha, null, "kit sem ficha");
   passo("ficha olfativa (descrição sem citar a fonte, notas, duração; cache; kit sem ficha)");
-  // body splash: "Loção Corporal" anunciado como mist/splash entra; loção de verdade não; splash em oferta solta entra
+  // body splash e loção: "Loção Corporal" anunciado como mist/splash vira "Body Splash"; loção de verdade entra como loção
   const bs = (await (await fetch(`${URL_API}/buscar?q=love%20spell`)).json()).produtos;
   assert.ok(bs.some((p) => p.n === "Body Splash Victoria's Secret Love Spell 250ML" && p.r === "0-901"), JSON.stringify(bs));
   assert.ok(bs.some((p) => p.n === "Body Splash Victoria's Secret Bare Vanilla 250ML" && p.r === "1-881"), JSON.stringify(bs));
-  assert.ok(!bs.some((p) => /Amber Romance/.test(p.n)), "loção de verdade fica de fora");
-  passo("body splash (modelo 'Loção Corporal' vendido como splash entra com nome certo; loção não)");
+  assert.ok(bs.some((p) => p.n === "Loção Corporal Victoria's Secret Amber Romance 236ML" && p.r === "0-903"), "loção entra com o próprio nome");
+  passo("body splash e loção (nome certo para cada um)");
   api.close();
-  assert.equal(resp.produtos.length, 3, JSON.stringify(resp));
+  assert.equal(resp.produtos.length, 5, JSON.stringify(resp));
   for (const p of resp.produtos) assert.deepEqual(Object.keys(p).sort(), ["a", "i", "n", "p", "r"]);
   assert.ok(resp.produtos.some((p) => p.n.startsWith("Kit Asad") && p.r === "1-555"));
   assert.ok(resp.produtos.some((p) => p.n === "Kit Perfume Asad Trio Edp 100ML" && p.r === "0-777"), "kit em oferta solta entra");
-  assert.ok(!resp.produtos.some((p) => /Creme|Outra/.test(p.n)), "creme e loja de fora ficam de fora");
+  assert.ok(resp.produtos.some((p) => p.n === "Creme Corporal Asad 280g" && p.r === "0-780"), "creme (modelo) entra");
+  assert.ok(resp.produtos.some((p) => p.n === "Creme Hidratante Asad 200g" && p.r === "0-778"), "creme (oferta solta) entra");
+  assert.ok(!resp.produtos.some((p) => /Air Freshener|Outra/.test(p.n)), "aromatizador e loja de fora ficam de fora");
   assert.ok(!JSON.stringify(resp).match(/Loja|US\$|usd|margem/i));
-  assert.deepEqual(ler("descobertos.json").map((p) => p.id).sort(), ["9005", "9100", "o7001", "o7101"]);
-  passo("busca sob demanda (só n/i/p/r/a; kit entra, creme não; guarda o achado)");
+  assert.deepEqual(ler("descobertos.json").map((p) => p.id).sort(), ["9005", "9006", "9100", "9101", "o7001", "o7002", "o7101"]);
+  passo("busca sob demanda (só n/i/p/r/a; kit e creme entram, aromatizador não; guarda o achado)");
 
   // coleta seguinte junta os descobertos ao catálogo
   grava("estado.json", { varredura: { "loja-alfa": HOJE, "loja-beta": HOJE }, novos: HOJE });

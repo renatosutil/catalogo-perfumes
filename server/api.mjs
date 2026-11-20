@@ -84,14 +84,13 @@ export function criarServico({ cliente = criarCliente({ esperaMs: Number(env.ESP
       let abertos = 0;
       for (const m of itens) {
         if (naoPerfume.has(m.id)) continue;
-        const nomeModelo = m.verificarSplash ? nomeSplash(m.nome) : m.nome;
-        const conhecido = cat.porId.get(m.id) || cat.porNome.get(normalizar(nomeModelo));
+        const conhecido = cat.porId.get(m.id) || cat.porNome.get(normalizar(m.nome)) || cat.porNome.get(normalizar(nomeSplash(m.nome)));
         if (conhecido) { if (!saida.includes(conhecido)) saida.push(conhecido); continue; }
         if (abertos >= MAX_NOVOS_BUSCA || !podeConsultarFonte(1)) { parcial = true; continue; }
         abertos++;
         const pagina = await pedir(m.href);
-        // "Loção Corporal" só entra se as lojas o anunciam como body splash/mist/colônia
-        if (m.verificarSplash && !modeloEhSplash(lerBusca(pagina).itens.map((x) => x.nome))) { naoPerfume.add(m.id); continue; }
+        // "Loção Corporal" anunciado pelas lojas como splash/mist/colônia vira "Body Splash ..."; senão fica como loção
+        const nomeModelo = m.verificarSplash && modeloEhSplash(lerBusca(pagina).itens.map((x) => x.nome)) ? nomeSplash(m.nome) : m.nome;
         const o = ofertasDasLojas(lerOfertas(pagina), nomes, hoje());
         if (!o.length) { naoPerfume.add(m.id); continue; }
         const ja = o.map((x) => cat.porOferta.get(`${x[0]}:${x[2]}`)).find(Boolean);
