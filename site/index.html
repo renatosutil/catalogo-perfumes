@@ -68,6 +68,7 @@ a.btn{display:block;text-align:center;text-decoration:none}
   <p>Escolha os perfumes, ajuste as quantidades e envie o pedido pelo WhatsApp.</p>
   <div class="tools">
     <input id="q" type="search" placeholder="Buscar perfume ou marca…">
+    <select id="tipo"><option value="">Todos os tipos</option><option>Perfumes</option><option>Kits</option><option>Body splash</option><option>Cremes e loções</option><option>Hair mist</option></select>
     <select id="gen"><option value="">Todos</option><option>Masculino</option><option>Feminino</option><option>Unissex</option></select>
     <select id="brand"><option value="">Todas as marcas</option></select>
     <select id="sort"><option value="pop">Mais procurados</option><option value="asc">Menor preço</option><option value="desc">Maior preço</option><option value="az">A–Z</option></select>
@@ -135,7 +136,7 @@ function build(){
     const conc=(d.n.match(/Eau de Parfum|Eau de Toilette|Extrait de Parfum/i)||[""])[0];
     const ml=(d.n.match(/(\d+)\s*ML/i)||[,""])[1];
     const dias=idade(d.a);
-    return {id:i,brand,gender,name,conc,ml,full:d.n,img:d.i,price:d.p,ref:d.r,dias,stale:dias>validade};
+    return {id:i,brand,gender,name,conc,ml,full:d.n,img:d.i,price:d.p,ref:d.r,dias,stale:dias>validade,tipo:tipoDe(d.n)};
   });
   const sel=$("brand"),atual=sel.value;sel.length=1;
   [...new Set(P.map(p=>p.brand))].sort().forEach(b=>{const o=document.createElement("option");o.textContent=b;sel.appendChild(o)});
@@ -171,10 +172,18 @@ function buscarMais(){
     buscando--;render();
   },700);
 }
+// tipo do produto pelo nome (kit primeiro: kits podem incluir hair mist ou creme)
+function tipoDe(n){
+  if(/\bkit\b|\bset\b|\bcollection\b.*\d+\s*(pcs|pe[çc]as|unid)|\d+\s*ml\s*\+|\+\s*\d+\s*ml/i.test(n))return "Kits";
+  if(/hair\s*(mist|perfume)|capilar|cabelo/i.test(n))return "Hair mist";
+  if(/body\s*(splash|mist)|\bsplash\b|fragrance\s*mist|col[oô]nia/i.test(n))return "Body splash";
+  if(/lo[çc][ãa]o|\bcreme\b|hidratante|lotion|\bcream\b|butter/i.test(n))return "Cremes e loções";
+  return "Perfumes";
+}
 function render(){
-  const q=$("q").value.trim().toLowerCase(),g=$("gen").value,b=$("brand").value,s=$("sort").value;
+  const q=$("q").value.trim().toLowerCase(),g=$("gen").value,b=$("brand").value,s=$("sort").value,t=$("tipo").value;
   const toks=palavras(q),achados=ACHADOS[q];
-  let L=P.filter(p=>(!g||p.gender===g)&&(!b||p.brand===b)&&(!q||(achados&&achados.has(p.full))||toks.every(t=>norm(p.full).includes(t))));
+  let L=P.filter(p=>(!t||p.tipo===t)&&(!g||p.gender===g)&&(!b||p.brand===b)&&(!q||(achados&&achados.has(p.full))||toks.every(t=>norm(p.full).includes(t))));
   if(s==="asc")L.sort((a,b)=>a.price-b.price);else if(s==="desc")L.sort((a,b)=>b.price-a.price);else if(s==="az")L.sort((a,b)=>a.full.localeCompare(b.full));
   const dt=DB.atualizadoEm?new Date(DB.atualizadoEm).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"}):"";
   $("count").textContent=L.length+" perfumes"+(L.length>LIMIT?" (mostrando "+LIMIT+")":"")+(buscando?" · buscando mais perfumes…":"")+(q&&indisponivel&&!buscando?" · busca ampliada indisponível no momento":"")+(dt&&!q?" · preços atualizados em "+dt:"");
@@ -208,7 +217,7 @@ function refreshLink(){
   a.onclick=e=>{if(!ok){e.preventDefault();alert(Object.keys(cart).length?"WhatsApp do vendedor ainda não configurado.":"Adicione ao menos um perfume.")}};
 }
 document.addEventListener("click",e=>{const b=e.target.closest("button[data-n]");if(!b)return;const n=b.dataset.n;setQty(n,(cart[n]||0)+Number(b.dataset.d))});
-["q","gen","brand","sort"].forEach(id=>$(id).addEventListener("input",()=>{LIMIT=60;render();if(id==="q")buscarMais()}));
+["q","tipo","gen","brand","sort"].forEach(id=>$(id).addEventListener("input",()=>{LIMIT=60;render();if(id==="q")buscarMais()}));
 $("more").onclick=()=>{LIMIT+=60;render()};
 ["cname","cnote"].forEach(id=>$(id).addEventListener("input",refreshLink));
 $("open").onclick=()=>{renderLines();$("dlg").showModal()};
