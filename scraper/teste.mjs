@@ -100,7 +100,7 @@ const arq = (n) => join(dir, n);
 const ler = (n) => JSON.parse(readFileSync(arq(n), "utf8"));
 const grava = (n, o) => writeFileSync(arq(n), JSON.stringify(o));
 const ENV = { DADOS_DIR: dir, FONTE_URL: FONTE, ESPERA_MS: "1", HOJE, DADOS_CHAVE: CHAVE, MARGEM: "0.35", ACRESCIMO_COTACAO: "0.05", DESCOBERTOS: arq("descobertos.json"),
-  EVOLUTION_URL: FONTE, EVOLUTION_INSTANCIA: "teste", EVOLUTION_APIKEY: "chave-teste", ALERTA_NUMERO: "5541000000000", AMPLIACAO_PEDIDOS: "0" };
+  EVOLUTION_URL: FONTE, EVOLUTION_INSTANCIA: "teste", EVOLUTION_APIKEY: "chave-teste", ALERTA_NUMERO: "5541000000000", AMPLIACAO_PEDIDOS: "0", AMPLIACAO_ATE: "" };
 const rodar = (script, args = [], extra = {}) => new Promise((resolve) => {
   const f = spawn(process.execPath, [join(AQUI, script), ...args], { env: { ...process.env, ...ENV, ...extra } });
   let out = "";

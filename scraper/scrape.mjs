@@ -21,7 +21,10 @@ const PAGINAS_NOVOS = Number(process.env.PAGINAS_NOVOS || 10);
 const DIAS_NOVOS = 7;
 const MAX_ALTA = Number(process.env.MAX_ALTA || 40);
 const MAX_ALTA_NOVOS = Number(process.env.MAX_ALTA_NOVOS || 20);
-const AMPLIACAO_PEDIDOS = Number(process.env.AMPLIACAO_PEDIDOS ?? 1000); // pedidos por noite para completar o catálogo
+const AMPLIACAO_PEDIDOS = Number(process.env.AMPLIACAO_PEDIDOS ?? 3000); // teto de segurança de pedidos por noite
+// horário-limite da ampliação (Brasília). Rodando antes dele, a ampliação trabalha até lá; depois dele (ex.: execução manual de dia), vale só o teto.
+const AMPLIACAO_ATE = process.env.AMPLIACAO_ATE ?? "06:45";
+const horaBrasilia = () => new Intl.DateTimeFormat("en-GB", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date());
 
 export async function coletar({ cliente = criarCliente(), log = console.log } = {}) {
   const inicio = Date.now();
@@ -155,15 +158,17 @@ export async function coletar({ cliente = criarCliente(), log = console.log } = 
     }
 
     // ampliação: lista todos os perfumes de cada loja (aos poucos) e abre a página dos que faltam,
-    // até AMPLIACAO_PEDIDOS pedidos por noite. Ao fim de um ciclo completo, recomeça (pega lançamentos).
+    // até o horário AMPLIACAO_ATE (teto: AMPLIACAO_PEDIDOS pedidos). Ao fim de um ciclo completo, recomeça (pega lançamentos).
     if (!soLojas && AMPLIACAO_PEDIDOS > 0) {
       const amp = (estado.ampliacao ||= { lojas: {}, fila: [], ciclo: 1 });
       const naFilaAmp = new Set(amp.fila.map((m) => String(m.id)));
       let gastos = 0, listadas = 0, abertos = 0, entraram = 0, juntados = 0;
       const limiteListagem = Math.round(AMPLIACAO_PEDIDOS * 0.25);
+      const comPrazo = !!AMPLIACAO_ATE && horaBrasilia() < AMPLIACAO_ATE;
+      const temTempo = () => !comPrazo || horaBrasilia() < AMPLIACAO_ATE;
       for (const loja of lojas) {
         const st = (amp.lojas[loja.slug] ||= { pag: 1, fim: false });
-        while (!st.fim && listadas < limiteListagem && gastos < AMPLIACAO_PEDIDOS) {
+        while (!st.fim && listadas < limiteListagem && gastos < AMPLIACAO_PEDIDOS && temTempo()) {
           const { itens, total } = lerModelos((await cliente.get(`/perfume/?page=${st.pag}&loja=${loja.slug}`)).html);
           gastos++; listadas++;
           for (const m of itens) {
@@ -175,7 +180,7 @@ export async function coletar({ cliente = criarCliente(), log = console.log } = 
           if (!itens.length || st.pag * POR_PAGINA >= (total || 0)) st.fim = true; else st.pag++;
         }
       }
-      while (amp.fila.length && gastos < AMPLIACAO_PEDIDOS) {
+      while (amp.fila.length && gastos < AMPLIACAO_PEDIDOS && temTempo()) {
         const m = amp.fila[0];
         if (ids.has(String(m.id))) { amp.fila.shift(); continue; }
         const o = ofertasDasLojas(lerOfertas((await cliente.get(m.href)).html), nomes, dia);
