@@ -74,6 +74,7 @@ const server = http.createServer((req, res) => {
     if (loja === "loja-beta") return fim(pagina(1, modelo("/perfume-novo-dois_9002/", "Novo Dois 100ML")));
     return fim(pagina(0, ""));
   }
+  if (u.pathname === "/perfume-novo-dois_9002/") return fim(`<body>${oferta("Loja Beta", "31,00", "4440")}</body>`);
   if (u.pathname === "/perfume-novo-um_9001/") return fim(`<body>${oferta("Loja Alfa", "25,00", "333")}${oferta("Outra Loja", "5,00", "1")}${oferta("Loja Beta", "27,00", "444")}</body>`);
   if (u.pathname === "/kit-perfume-asad-duo_9005/") return fim(`<body>${oferta("Loja Beta", "30,00", "555")}</body>`);
   if (u.pathname === "/perfume-alta-tres_9003/") return fim(`<body>${oferta("Loja Beta", "26,00", "991")}</body>`);
@@ -99,7 +100,7 @@ const arq = (n) => join(dir, n);
 const ler = (n) => JSON.parse(readFileSync(arq(n), "utf8"));
 const grava = (n, o) => writeFileSync(arq(n), JSON.stringify(o));
 const ENV = { DADOS_DIR: dir, FONTE_URL: FONTE, ESPERA_MS: "1", HOJE, DADOS_CHAVE: CHAVE, MARGEM: "0.35", ACRESCIMO_COTACAO: "0.05", DESCOBERTOS: arq("descobertos.json"),
-  EVOLUTION_URL: FONTE, EVOLUTION_INSTANCIA: "teste", EVOLUTION_APIKEY: "chave-teste", ALERTA_NUMERO: "5541000000000" };
+  EVOLUTION_URL: FONTE, EVOLUTION_INSTANCIA: "teste", EVOLUTION_APIKEY: "chave-teste", ALERTA_NUMERO: "5541000000000", AMPLIACAO_PEDIDOS: "0" };
 const rodar = (script, args = [], extra = {}) => new Promise((resolve) => {
   const f = spawn(process.execPath, [join(AQUI, script), ...args], { env: { ...process.env, ...ENV, ...extra } });
   let out = "";
@@ -234,6 +235,24 @@ try {
   assert.match(r.out, /ignorada/); assert.equal(ler("bruto.json").cotacao, 8);
   comCotacao(5.65);
   passo("cotação a cada 3 h (1 pedido; republica só se mudou; ignora leitura absurda)");
+
+  // ampliação: lista a loja, junta o modelo de um produto antigo (sem id) em vez de duplicar, acrescenta o novo
+  const brutoAntes = readFileSync(arq("bruto.json"));
+  grava("bruto.json", { versao: 1, cotacao: 5.65, produtos: [produtoX(), { id: null, n: "Produto Antigo Feminino 100ML", i: null, o: [[0, 20, "333", "2026-11-10"]] }] });
+  grava("estado.json", { varredura: { "loja-alfa": HOJE, "loja-beta": HOJE }, novos: HOJE });
+  r = await rodar("scrape.mjs", [], { AMPLIACAO_PEDIDOS: "3" });
+  assert.equal(r.status, 0, r.out);
+  const bam = ler("bruto.json"), eam = ler("estado.json");
+  assert.equal(bam.produtos.length, 3, JSON.stringify(bam.produtos));
+  const antigo = bam.produtos.find((p) => p.n === "Produto Antigo Feminino 100ML");
+  assert.equal(antigo.id, "9001", "o antigo ganhou o número do modelo");
+  assert.deepEqual(antigo.o.map((x) => x[2]).sort(), ["333", "444"], "ofertas juntadas, sem duplicar o produto");
+  assert.ok(bam.produtos.some((p) => p.id === "9002"), "modelo novo entrou");
+  assert.ok(!pedidos.some((p) => p.includes("creme")), "só perfumes na ampliação");
+  assert.equal(eam.ampliacao.lojas["loja-alfa"].fim, true);
+  assert.match(r.out, /ampliação \(ciclo 1\): 1 páginas de lista, 2 modelos abertos, 1 novos no catálogo, 1 juntados/);
+  writeFileSync(arq("bruto.json"), brutoAntes);
+  passo("ampliação (lista a loja, junta o antigo sem duplicar, acrescenta o novo, respeita o limite)");
 
   // em alta: ordem de relevância da fonte; o que não está no catálogo entra; data.json leva a posição (h)
   modoAlta = true;

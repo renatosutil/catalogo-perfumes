@@ -21,6 +21,7 @@ const PAGINAS_NOVOS = Number(process.env.PAGINAS_NOVOS || 10);
 const DIAS_NOVOS = 7;
 const MAX_ALTA = Number(process.env.MAX_ALTA || 40);
 const MAX_ALTA_NOVOS = Number(process.env.MAX_ALTA_NOVOS || 20);
+const AMPLIACAO_PEDIDOS = Number(process.env.AMPLIACAO_PEDIDOS ?? 1000); // pedidos por noite para completar o catálogo
 
 export async function coletar({ cliente = criarCliente(), log = console.log } = {}) {
   const inicio = Date.now();
@@ -37,14 +38,32 @@ export async function coletar({ cliente = criarCliente(), log = console.log } = 
   const soLojas = process.env.SO_LOJAS ? process.env.SO_LOJAS.split(",") : null;
   const naoSalvar = process.env.NAO_SALVAR === "1";
 
-  // índice das ofertas conhecidas: "lojaIdx:cod" -> oferta (array mutável dentro do produto)
-  const indice = new Map();
+  // índice das ofertas conhecidas: "lojaIdx:cod" -> oferta (array mutável dentro do produto) e -> produto dono
+  const indice = new Map(), dono = new Map();
   const ids = new Set(), nomesConhecidos = new Set();
-  for (const p of bruto.produtos) {
+  const registrar = (p) => {
     if (p.id) ids.add(String(p.id));
     nomesConhecidos.add(normalizar(p.n));
-    for (const o of p.o) indice.set(`${o[0]}:${o[2]}`, o);
-  }
+    for (const o of p.o) { const k = `${o[0]}:${o[2]}`; indice.set(k, o); dono.set(k, p); }
+  };
+  for (const p of bruto.produtos) registrar(p);
+  // Acrescenta um modelo ao catálogo sem duplicar: se alguma oferta dele já pertence a um produto,
+  // junta nesse produto (e grava o número do modelo nele, se faltava). Devolve "novo" ou "juntado".
+  const adicionarModelo = (m, o) => {
+    const existente = o.map((x) => dono.get(`${x[0]}:${x[2]}`)).find(Boolean);
+    if (existente) {
+      if (!existente.id) existente.id = String(m.id);
+      for (const x of o) if (!indice.has(`${x[0]}:${x[2]}`)) existente.o.push(x);
+      registrar(existente);
+      return "juntado";
+    }
+    const prod = { id: String(m.id), n: m.nome, i: m.img, o };
+    bruto.produtos.push(prod);
+    registrar(prod);
+    novosAdicionados++;
+    return "novo";
+  };
+  const tirarDaFila = (o) => { for (const x of o) fila.delete(`${x[0]}:${x[2]}`); };
 
   // agenda: lojas diárias vencidas + no máximo 1 loja semanal (a mais atrasada)
   const vencidas = lojas
@@ -76,11 +95,8 @@ export async function coletar({ cliente = criarCliente(), log = console.log } = 
         abertos++;
         const o = ofertasDasLojas(lerOfertas((await cliente.get(m.href)).html), nomes, dia);
         if (!o.length) continue;
-        bruto.produtos.push({ id: m.id, n: m.nome, i: m.img, o });
-        ids.add(m.id);
-        nomesConhecidos.add(normalizar(m.nome));
-        for (const x of o) { indice.set(`${x[0]}:${x[2]}`, x); fila.delete(`${x[0]}:${x[2]}`); }
-        novosAdicionados++; entraram++;
+        if (adicionarModelo(m, o) === "novo") entraram++;
+        tirarDaFila(o);
       }
       if (lista.length) alta = { dia, itens: lista.slice(0, MAX_ALTA).map((m) => ({ id: m.id, n: normalizar(m.nome) })) };
       log(`  em alta hoje: ${lista.length} perfumes (${entraram} entraram no catálogo agora)`);
@@ -132,12 +148,46 @@ export async function coletar({ cliente = criarCliente(), log = console.log } = 
       for (const m of [...candidatos.values()].slice(0, MAX_NOVOS)) {
         const o = ofertasDasLojas(lerOfertas((await cliente.get(m.href)).html), nomes, dia);
         if (!o.length) continue;
-        bruto.produtos.push({ id: m.id, n: m.nome, i: m.img, o });
-        ids.add(m.id);
-        for (const x of o) { indice.set(`${x[0]}:${x[2]}`, x); fila.delete(`${x[0]}:${x[2]}`); }
-        novosAdicionados++;
+        adicionarModelo(m, o);
+        tirarDaFila(o);
       }
       estado.novos = dia;
+    }
+
+    // ampliação: lista todos os perfumes de cada loja (aos poucos) e abre a página dos que faltam,
+    // até AMPLIACAO_PEDIDOS pedidos por noite. Ao fim de um ciclo completo, recomeça (pega lançamentos).
+    if (!soLojas && AMPLIACAO_PEDIDOS > 0) {
+      const amp = (estado.ampliacao ||= { lojas: {}, fila: [], ciclo: 1 });
+      const naFilaAmp = new Set(amp.fila.map((m) => String(m.id)));
+      let gastos = 0, listadas = 0, abertos = 0, entraram = 0, juntados = 0;
+      const limiteListagem = Math.round(AMPLIACAO_PEDIDOS * 0.25);
+      for (const loja of lojas) {
+        const st = (amp.lojas[loja.slug] ||= { pag: 1, fim: false });
+        while (!st.fim && listadas < limiteListagem && gastos < AMPLIACAO_PEDIDOS) {
+          const { itens, total } = lerModelos((await cliente.get(`/perfume/?page=${st.pag}&loja=${loja.slug}`)).html);
+          gastos++; listadas++;
+          for (const m of itens) {
+            const id = String(m.id);
+            if (!ehPerfume(m.href) || ids.has(id) || naFilaAmp.has(id) || nomesConhecidos.has(normalizar(m.nome))) continue;
+            amp.fila.push({ id, href: m.href, nome: m.nome, img: m.img });
+            naFilaAmp.add(id);
+          }
+          if (!itens.length || st.pag * POR_PAGINA >= (total || 0)) st.fim = true; else st.pag++;
+        }
+      }
+      while (amp.fila.length && gastos < AMPLIACAO_PEDIDOS) {
+        const m = amp.fila[0];
+        if (ids.has(String(m.id))) { amp.fila.shift(); continue; }
+        const o = ofertasDasLojas(lerOfertas((await cliente.get(m.href)).html), nomes, dia);
+        gastos++; abertos++;
+        amp.fila.shift();
+        if (!o.length) continue;
+        if (adicionarModelo(m, o) === "novo") entraram++; else juntados++;
+        tirarDaFila(o);
+      }
+      const listagemFeita = lojas.every((l) => amp.lojas[l.slug]?.fim);
+      log(`  ampliação (ciclo ${amp.ciclo}): ${listadas} páginas de lista, ${abertos} modelos abertos, ${entraram} novos no catálogo, ${juntados} juntados a existentes | faltam abrir: ${amp.fila.length}${listagemFeita ? " | listagem completa" : ""}`);
+      if (listagemFeita && !amp.fila.length) { amp.lojas = {}; amp.ciclo++; }
     }
   } catch (e) {
     const s = cliente.stats();
@@ -163,10 +213,8 @@ export async function coletar({ cliente = criarCliente(), log = console.log } = 
     renameSync(descobertos, processando);
     for (const p of lerJson(processando, [])) {
       if (ids.has(String(p.id)) || nomesConhecidos.has(normalizar(p.n))) continue;
-      bruto.produtos.push(p);
-      ids.add(String(p.id));
-      nomesConhecidos.add(normalizar(p.n));
-      novosAdicionados++;
+      adicionarModelo({ id: p.id, nome: p.n, img: p.i }, p.o);
+      tirarDaFila(p.o);
     }
   }
 
