@@ -8,7 +8,8 @@ aqui já convertidos para o preço final em reais.
 
 - **Coleta diária (VPS):** `scraper/scrape.mjs` atualiza os preços das ofertas já conhecidas pelas buscas da
   fonte de preços, uma loja por vez, conforme a agenda de cada loja; 1x por semana procura perfumes novos.
-  Um pedido por vez, com pausa de 10 s (+ sorteio de até 50%). Se a fonte responder 403/429, a coleta para
+  Um pedido por vez, com pausa de `ESPERA_MS` (hoje 5 s, no `.env` da VPS) + sorteio de até 50%. A ampliação do catálogo
+  trabalha até as 06h45 (`AMPLIACAO_ATE`). Se a fonte responder 403/429, a coleta para
   na hora e os dados anteriores são mantidos.
 - **Busca sob demanda (VPS):** `server/api.mjs` atende a busca do site. O que não estiver no catálogo é
   procurado na hora (com cache, fila e limites por cliente) e passa a fazer parte do catálogo.
